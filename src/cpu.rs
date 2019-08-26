@@ -1,3 +1,6 @@
+use super::mmu;
+use super::memory::Memory;
+
 /// Represents all the registers in use by the Gameboy CPU.
 /// Consists of 16-bit register pairs that can be accessed as 8-bit
 /// high and low registers and as combined 16-bit values
@@ -48,22 +51,33 @@ impl Registers {
         reg.pc = 0x0100;
         reg
     }
+
+    /// Returns a 16-bit value where 
+    /// A is the hi 8-bits and F is the lo 8-bits
     fn get_af(&self) -> u16 {
         ((self.a as u16) << 8) | (self.f as u16)
     }
 
+    /// Returns a 16-bit value where 
+    /// B is the hi 8-bits and C is the lo 8-bits
     fn get_bc(&self) -> u16 {
         ((self.b as u16) << 8) | (self.c as u16)
     }
 
+    /// Returns a 16-bit value where 
+    /// D is the hi 8-bits and E is the lo 8-bits
     fn get_de(&self) -> u16 {
         ((self.d as u16) << 8) | (self.e as u16)
     }
 
+    /// Returns a 16-bit value where 
+    /// H is the hi 8-bits and L is the lo 8-bits
     fn get_hl(&self) -> u16 {
         ((self.h as u16) << 8) | (self.l as u16)
     }
 
+    /// Sets a 16-bit value where 
+    /// A is the hi 8-bits and F is the lo 8-bits
     fn set_af(&mut self, val: u16) {
         // TODO: Probably shouldn't use this logic for
         // setting F?
@@ -71,31 +85,54 @@ impl Registers {
         self.f = (val & 0xFF) as u8;
     }
 
+    /// Sets a 16-bit value where 
+    /// B is the hi 8-bits and C is the lo 8-bits
     fn set_bc(&mut self, val: u16) {
         self.b = (val >> 8) as u8;
         self.c = (val & 0xFF) as u8;
     }
 
+    /// Sets a 16-bit value where 
+    /// D is the hi 8-bits and E is the lo 8-bits
     fn set_de(&mut self, val: u16) {
         self.d = (val >> 8) as u8;
         self.e = (val & 0xFF) as u8;
     }
 
+    /// Sets a 16-bit value where 
+    /// H is the hi 8-bits and L is the lo 8-bits
     fn set_hl(&mut self, val: u16) {
         self.h = (val >> 8) as u8;
         self.l = (val & 0xFF) as u8;
     }
 }
 
+/// The CPU contains Register state and is responsible for
+/// decoding each opcode at the current PC and updating 
+/// the Registers and MMU when appropriate.
 pub struct Cpu {
     reg: Registers,
 }
 
 impl Cpu {
+    /// Initializes CPU internal state and returns a handle to the
+    /// initialized Cpu struct.
     pub fn power_on() -> Self {
         Cpu {
             reg: Registers::power_on(),
         }
+    }
+
+    /// Fetches a single instruction opcode, decodes the opcode to the 
+    /// appropriate function, and executes the functionality.
+    /// Returns the number of cycles executed.
+    pub fn tick(&mut self, mmu: &mut mmu::Mmu) -> usize {
+        let opcode = mmu.read_byte(self.reg.pc);
+        self.reg.pc += 1;
+        match opcode {
+            _ => panic!("Unsupported or unimplemented opcode {}", opcode)
+        }
+        0
     }
 }
 

@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::io::Read;
+use std::io;
 use std::path::Path;
 
 use super::mbc0::Mbc0;
@@ -23,17 +24,17 @@ pub struct Mmu {
 }
 
 impl Mmu {
-    pub fn power_on(path: impl AsRef<Path>) -> Self {
-        let mut f = File::open(path.as_ref()).unwrap();
+    pub fn power_on(path: impl AsRef<Path>) -> io::Result<Self> {
+        let mut f = File::open(path.as_ref())?;
         let mut rom_data = Vec::new();
-        f.read_to_end(&mut rom_data).unwrap();
+        f.read_to_end(&mut rom_data)?;
         println!("ROM size: {}", rom_data.len());
         let cart: Box<dyn Memory> = match rom_data[0x147] {
             0x00 => Box::new(Mbc0::power_on(rom_data)),
             _ => unimplemented!(),
         };
 
-        Mmu {
+        Ok(Mmu {
             cart,
             vram: Vram::power_on(),
             wram: Wram::power_on(),
@@ -41,7 +42,7 @@ impl Mmu {
             io: [0; 0x80],
             hram: [0; 0x7F],
             ie: false,
-        }
+        })
     }
 }
 
