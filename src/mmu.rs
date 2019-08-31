@@ -1,6 +1,6 @@
 use std::fs::File;
-use std::io::Read;
 use std::io;
+use std::io::Read;
 use std::path::Path;
 
 use super::mbc0::Mbc0;
@@ -24,17 +24,19 @@ pub struct Mmu {
 }
 
 impl Mmu {
+    /// Initializes the MMU with the given ROM path.
+    /// Opens the given file and reads cartridge header information to find
+    /// the MBC type.
     pub fn power_on(path: impl AsRef<Path>) -> io::Result<Self> {
         let mut f = File::open(path.as_ref())?;
         let mut rom_data = Vec::new();
         f.read_to_end(&mut rom_data)?;
-        println!("ROM size: {}", rom_data.len());
+        debug!("ROM size: {}", rom_data.len());
         let cart: Box<dyn Memory> = match rom_data[0x147] {
             0x00 => Box::new(Mbc0::power_on(rom_data)),
             _ => unimplemented!(),
         };
-
-        Ok(Mmu {
+        let mut mmu = Mmu {
             cart,
             vram: Vram::power_on(),
             wram: Wram::power_on(),
@@ -42,7 +44,24 @@ impl Mmu {
             io: [0; 0x80],
             hram: [0; 0x7F],
             ie: false,
-        })
+        };
+
+        // Power up sequence
+        mmu.write_byte(0xFF05, 0x00);
+        mmu.write_byte(0xFF06, 0x00);
+        mmu.write_byte(0xFF07, 0x00);
+        mmu.write_byte(0xFF10, 0x00);
+        mmu.write_byte(0xFF11, 0x00);
+        mmu.write_byte(0xFF12, 0x00);
+        mmu.write_byte(0xFF14, 0x00);
+        mmu.write_byte(0xFF16, 0x00);
+        mmu.write_byte(0xFF17, 0x00);
+        mmu.write_byte(0xFF05, 0x00);
+        mmu.write_byte(0xFF05, 0x00);
+        mmu.write_byte(0xFF05, 0x00);
+        mmu.write_byte(0xFF05, 0x00);
+        mmu.write_byte(0xFF05, 0x00);
+        Ok(mmu)
     }
 }
 

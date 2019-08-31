@@ -1,22 +1,21 @@
 use super::cpu;
 use super::mmu;
 
-use std::path::Path;
 use std::io;
+use std::path::Path;
 
-struct Gameboy {
+pub struct Gameboy {
     cpu: cpu::Cpu,
     mmu: mmu::Mmu,
 }
 
 impl Gameboy {
-
     /// Initializes Gameboy state to begin emulation on provided
     /// binary file
     pub fn power_on(path: impl AsRef<Path>) -> io::Result<Self> {
         Ok(Gameboy {
             cpu: cpu::Cpu::power_on(),
-            mmu: mmu::Mmu::power_on(path)?
+            mmu: mmu::Mmu::power_on(path)?,
         })
     }
 
