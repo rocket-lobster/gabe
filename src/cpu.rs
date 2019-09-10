@@ -587,7 +587,6 @@ impl Cpu {
             0x73 => mmu.write_byte(self.reg.get_hl(), self.reg.e),
             0x74 => mmu.write_byte(self.reg.get_hl(), self.reg.h),
             0x75 => mmu.write_byte(self.reg.get_hl(), self.reg.l),
-            0x76 => (), // TODO: HALT
             0x77 => mmu.write_byte(self.reg.get_hl(), self.reg.a),
             0x78 => self.reg.a = self.reg.b,
             0x79 => self.reg.a = self.reg.c,
@@ -1024,6 +1023,138 @@ impl Cpu {
             0xCB => {
                 let cb_opcode = self.imm(mmu);
                 match cb_opcode {
+                    0x00 => {
+                        let v = self.rlc(self.reg.b);
+                        self.reg.b = v;
+                    }
+                    0x01 => {
+                        let v = self.rlc(self.reg.c);
+                        self.reg.c = v;
+                    }
+                    0x02 => {
+                        let v = self.rlc(self.reg.d);
+                        self.reg.d = v;
+                    }
+                    0x03 => {
+                        let v = self.rlc(self.reg.e);
+                        self.reg.e = v;
+                    }
+                    0x04 => {
+                        let v = self.rlc(self.reg.h);
+                        self.reg.h = v;
+                    }
+                    0x05 => {
+                        let v = self.rlc(self.reg.l);
+                        self.reg.l = v;
+                    }
+                    0x06 => {
+                        let hl = mmu.read_byte(self.reg.get_hl());
+                        let v = self.rlc(hl);
+                        mmu.write_byte(self.reg.get_hl(), v);
+                    }
+                    0x07 => {
+                        let v = self.rlc(self.reg.a);
+                        self.reg.a = v;
+                    }
+                    0x08 => {
+                        let v = self.rrc(self.reg.b);
+                        self.reg.b = v;
+                    }
+                    0x09 => {
+                        let v = self.rrc(self.reg.c);
+                        self.reg.c = v;
+                    }
+                    0x0A => {
+                        let v = self.rrc(self.reg.d);
+                        self.reg.d = v;
+                    }
+                    0x0B => {
+                        let v = self.rrc(self.reg.e);
+                        self.reg.e = v;
+                    }
+                    0x0C => {
+                        let v = self.rrc(self.reg.h);
+                        self.reg.h = v;
+                    }
+                    0x0D => {
+                        let v = self.rrc(self.reg.l);
+                        self.reg.l = v;
+                    }
+                    0x0E => {
+                        let hl = mmu.read_byte(self.reg.get_hl());
+                        let v = self.rrc(hl);
+                        mmu.write_byte(self.reg.get_hl(), v);
+                    }
+                    0x0F => {
+                        let v = self.rrc(self.reg.a);
+                        self.reg.a = v;
+                    }
+                    0x10 => {
+                        let v = self.rl(self.reg.b);
+                        self.reg.b = v;
+                    }
+                    0x11 => {
+                        let v = self.rl(self.reg.c);
+                        self.reg.c = v;
+                    }
+                    0x12 => {
+                        let v = self.rl(self.reg.d);
+                        self.reg.d = v;
+                    }
+                    0x13 => {
+                        let v = self.rl(self.reg.e);
+                        self.reg.e = v;
+                    }
+                    0x14 => {
+                        let v = self.rl(self.reg.h);
+                        self.reg.h = v;
+                    }
+                    0x15 => {
+                        let v = self.rl(self.reg.l);
+                        self.reg.l = v;
+                    }
+                    0x16 => {
+                        let hl = mmu.read_byte(self.reg.get_hl());
+                        let v = self.rl(hl);
+                        mmu.write_byte(self.reg.get_hl(), v);
+                    }
+                    0x17 => {
+                        let v = self.rl(self.reg.a);
+                        self.reg.a = v;
+                    }
+                    0x18 => {
+                        let v = self.rr(self.reg.b);
+                        self.reg.b = v;
+                    }
+                    0x19 => {
+                        let v = self.rr(self.reg.c);
+                        self.reg.c = v;
+                    }
+                    0x1A => {
+                        let v = self.rr(self.reg.d);
+                        self.reg.d = v;
+                    }
+                    0x1B => {
+                        let v = self.rr(self.reg.e);
+                        self.reg.e = v;
+                    }
+                    0x1C => {
+                        let v = self.rr(self.reg.h);
+                        self.reg.h = v;
+                    }
+                    0x1D => {
+                        let v = self.rr(self.reg.l);
+                        self.reg.l = v;
+                    }
+                    0x1E => {
+                        let hl = mmu.read_byte(self.reg.get_hl());
+                        let v = self.rr(hl);
+                        mmu.write_byte(self.reg.get_hl(), v);
+                    }
+                    0x1F => {
+                        let v = self.rr(self.reg.a);
+                        self.reg.a = v;
+                    }
                     _ => panic!("Unsupported or unimplemented opcode 0xCB {:X}", opcode),
                 }
             }
@@ -1312,7 +1443,7 @@ impl Cpu {
     /// - H: Set to 0
     /// - C: Set to value of `r` bit 7, before the shift
     fn rl(&mut self, r: u8) -> u8 {
-        let mut v = r.rotate_left(1);
+        let mut v = r << 1;
         v = v | (self.reg.get_flag(Flag::C) as u8);
         self.reg.set_flag(Flag::Z, v == 0);
         self.reg.set_flag(Flag::N, false);
@@ -1321,7 +1452,8 @@ impl Cpu {
         v
     }
 
-    /// Rotate the given register value right, with bit 0 wrapping to bit 7
+    /// Rotate the given register value right, with bit 0 set to C,
+    /// and bit 7 containing the value of the old C.
     /// Flags:
     ///
     /// - Z: Set to 1 if resulting value is 0, set to 0 otherwise
@@ -1329,7 +1461,8 @@ impl Cpu {
     /// - H: Set to 0
     /// - C: Set to value of `r` bit 0, before the shift
     fn rr(&mut self, r: u8) -> u8 {
-        let v = r.rotate_right(1);
+        let mut v = r >> 1;
+        v = v | ((self.reg.get_flag(Flag::C) as u8) << 7);
         self.reg.set_flag(Flag::Z, v == 0);
         self.reg.set_flag(Flag::N, false);
         self.reg.set_flag(Flag::H, false);
@@ -1394,6 +1527,20 @@ mod cpu_tests {
         assert_eq!(cpu.reg.get_flag(Flag::C), true);
         v = cpu.rl(0b1001_0110);
         assert_eq!(v, 0b0010_1101);
+        assert_eq!(cpu.reg.get_flag(Flag::C), true);
+    }
+
+    #[test]
+    fn rr_test() {
+        let mut cpu = Cpu::power_on();
+        let mut v = cpu.rr(0b0110_0101);
+        assert_eq!(v, 0b1011_0010);
+        assert_eq!(cpu.reg.get_flag(Flag::C), true);
+        v = cpu.rr(0b1011_0010);
+        assert_eq!(v, 0b1101_1001);
+        assert_eq!(cpu.reg.get_flag(Flag::C), false);
+        v = cpu.rr(0b1101_1001);
+        assert_eq!(v, 0b0110_1100);
         assert_eq!(cpu.reg.get_flag(Flag::C), true);
     }
 }

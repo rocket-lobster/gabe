@@ -7,7 +7,7 @@ pub struct Wram {
 impl Wram {
     pub fn power_on() -> Self {
         Wram {
-            memory: vec![0; 0x2000]
+            memory: vec![0; 0x2000],
         }
     }
 }
