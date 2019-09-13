@@ -532,6 +532,28 @@ impl Cpu {
                 self.reg.set_hl(v - 1);
             }
 
+            // LDH (a8),A
+            0xE0 => {
+                let addr = 0xFF00 + u16::from(self.imm(mmu));
+                mmu.write_byte(addr, self.reg.a);
+            }
+            // LDH A,(a8)
+            0xF0 => {
+                let addr = 0xFF00 + u16::from(self.imm(mmu));
+                self.reg.a = mmu.read_byte(addr);
+            }
+
+            // LD (C),A
+            0xE2 => {
+                let addr = 0xFF00 + u16::from(self.reg.c);
+                mmu.write_byte(addr, self.reg.a);
+            }
+            // LD A,(C)
+            0xF2 => {
+                let addr = 0xFF00 + u16::from(self.reg.c);
+                self.reg.a = mmu.read_byte(addr);
+            }
+
             // LD r8,r8
             0x40 => (),
             0x41 => self.reg.b = self.reg.c,
