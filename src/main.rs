@@ -5,9 +5,11 @@ extern crate env_logger;
 
 mod cpu;
 mod gb;
+mod interrupt;
 mod mbc0;
 mod memory;
 mod mmu;
+mod timer;
 mod vram;
 mod wram;
 

@@ -3,8 +3,10 @@ use std::io;
 use std::io::Read;
 use std::path::Path;
 
+use super::interrupt::Interrupt;
 use super::mbc0::Mbc0;
 use super::memory::Memory;
+use super::timer::Timer;
 use super::vram::Vram;
 use super::wram::Wram;
 
@@ -17,6 +19,7 @@ pub struct Mmu {
     cart: Box<dyn Memory>,
     vram: Vram,
     wram: Wram,
+    timer: Timer,
     oam: [u8; 0xA0],
     io: [u8; 0x80],
     hram: [u8; 0x7F],
@@ -34,12 +37,13 @@ impl Mmu {
         debug!("ROM size: {}", rom_data.len());
         let cart: Box<dyn Memory> = match rom_data[0x147] {
             0x00 => Box::new(Mbc0::power_on(rom_data)),
-            _ => unimplemented!(),
+            _ => unimplemented!("MBC given not supported!"),
         };
-        let mut mmu = Mmu {
+        let mmu = Mmu {
             cart,
             vram: Vram::power_on(),
             wram: Wram::power_on(),
+            timer: Timer::power_on(),
             oam: [0; 0xA0],
             io: [0; 0x80],
             hram: [0; 0x7F],
@@ -47,21 +51,31 @@ impl Mmu {
         };
 
         // Power up sequence
-        mmu.write_byte(0xFF05, 0x00);
-        mmu.write_byte(0xFF06, 0x00);
-        mmu.write_byte(0xFF07, 0x00);
-        mmu.write_byte(0xFF10, 0x00);
-        mmu.write_byte(0xFF11, 0x00);
-        mmu.write_byte(0xFF12, 0x00);
-        mmu.write_byte(0xFF14, 0x00);
-        mmu.write_byte(0xFF16, 0x00);
-        mmu.write_byte(0xFF17, 0x00);
-        mmu.write_byte(0xFF05, 0x00);
-        mmu.write_byte(0xFF05, 0x00);
-        mmu.write_byte(0xFF05, 0x00);
-        mmu.write_byte(0xFF05, 0x00);
-        mmu.write_byte(0xFF05, 0x00);
+        // Probably going to initalize these per-component
+        // mmu.write_byte(0xFF05, 0x00);
+        // mmu.write_byte(0xFF06, 0x00);
+        // mmu.write_byte(0xFF07, 0x00);
+        // mmu.write_byte(0xFF10, 0x80);
+        // mmu.write_byte(0xFF11, 0xBF);
+        // mmu.write_byte(0xFF12, 0xF3);
+        // mmu.write_byte(0xFF14, 0xBF);
+        // mmu.write_byte(0xFF16, 0x3F);
+        // mmu.write_byte(0xFF17, 0x00);
+        // mmu.write_byte(0xFF19, 0xBF);
+        // mmu.write_byte(0xFF1A, 0x7F);
+        // mmu.write_byte(0xFF1B, 0xFF);
+        // mmu.write_byte(0xFF05, 0x00);
+        // mmu.write_byte(0xFF05, 0x00);
         Ok(mmu)
+    }
+
+    /// Updates all memory components to align with the number of cycles
+    /// run by the CPU, given by `cycles`
+    pub fn update(&mut self, cycles: usize) {
+        // Update APU
+        // Update VRAM
+        // Update Joypad
+        self.timer.update(cycles);
     }
 }
 
@@ -73,7 +87,8 @@ impl Memory for Mmu {
             0xA000..=0xBFFF => self.cart.read_byte(addr),
             0xC000..=0xFDFF => self.wram.read_byte(addr),
             0xFE00..=0xFE9F => self.oam[(addr - 0xFE00) as usize],
-            0xFF00..=0xFF7F => self.io[(addr - 0xFF00) as usize],
+            0xFF04..=0xFF07 => self.timer.read_byte(addr),
+            //0xFF00..=0xFF7F => self.io[(addr - 0xFF00) as usize],
             0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize],
             0xFFFF => self.ie as u8,
             _ => unimplemented!(),
@@ -86,7 +101,8 @@ impl Memory for Mmu {
             0xA000..=0xBFFF => self.cart.write_byte(addr, val),
             0xC000..=0xFDFF => self.wram.write_byte(addr, val),
             0xFE00..=0xFE9F => self.oam[(addr - 0xFE00) as usize] = val,
-            0xFF00..=0xFF7F => self.io[(addr - 0xFF00) as usize] = val,
+            0xFF04..=0xFF07 => self.timer.write_byte(addr, val),
+            //0xFF00..=0xFF7F => self.io[(addr - 0xFF00) as usize] = val,
             0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize] = val,
             0xFFFF => match val {
                 0 => self.ie = false,
