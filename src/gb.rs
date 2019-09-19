@@ -28,14 +28,12 @@ impl Gameboy {
         // CPU Clock rate / 60 = Cycles per 1/60th second, i.e. frame
         const CYCLES_PER_FRAME: usize = 4194304 / 60;
 
+        // Run until we reach the number of cycles in one video frame
         while self.frame_cycles < CYCLES_PER_FRAME {
-            // Will run until reaching a broken opcode,
-            // no timing for now
             let cycles = self.cpu.tick(&mut self.mmu);
 
-            // update_gpu(cycles)
-            // update_apu(cycles)
-            // update_timers(cycles)
+            // Update memory
+            self.mmu.update(cycles);
             self.frame_cycles += cycles;
         }
 

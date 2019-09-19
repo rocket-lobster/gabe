@@ -25,8 +25,6 @@ pub struct Timer {
     div_cycles: usize,
     /// Tracks the current cycles before incrementing TIMA, depends on TAC frequency
     tima_cycles: usize,
-    /// Tracks the current selected number of cycles before incrementing TIMA
-    tima_freq: usize,
 }
 
 impl Timer {
@@ -38,7 +36,6 @@ impl Timer {
             tac: 0x0,
             div_cycles: 0,
             tima_cycles: 0,
-            tima_freq: 1024,
         }
     }
 

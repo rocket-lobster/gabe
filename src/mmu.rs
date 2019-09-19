@@ -50,22 +50,6 @@ impl Mmu {
             ie: false,
         };
 
-        // Power up sequence
-        // Probably going to initalize these per-component
-        // mmu.write_byte(0xFF05, 0x00);
-        // mmu.write_byte(0xFF06, 0x00);
-        // mmu.write_byte(0xFF07, 0x00);
-        // mmu.write_byte(0xFF10, 0x80);
-        // mmu.write_byte(0xFF11, 0xBF);
-        // mmu.write_byte(0xFF12, 0xF3);
-        // mmu.write_byte(0xFF14, 0xBF);
-        // mmu.write_byte(0xFF16, 0x3F);
-        // mmu.write_byte(0xFF17, 0x00);
-        // mmu.write_byte(0xFF19, 0xBF);
-        // mmu.write_byte(0xFF1A, 0x7F);
-        // mmu.write_byte(0xFF1B, 0xFF);
-        // mmu.write_byte(0xFF05, 0x00);
-        // mmu.write_byte(0xFF05, 0x00);
         Ok(mmu)
     }
 
@@ -75,7 +59,18 @@ impl Mmu {
         // Update APU
         // Update VRAM
         // Update Joypad
-        self.timer.update(cycles);
+        if let Some(i) = self.timer.update(cycles) {
+            self.request_interrupt(i);
+        }
+    }
+
+    /// Takes the given Interrupt enum value, and sets the corresponding bit
+    /// in the IF register
+    fn request_interrupt(&mut self, int: Interrupt) {
+        // Grab the IF register of current interrupt requests
+        let mut int_flag = self.read_byte(0xFF0F);
+        int_flag |= int as u8;
+        self.write_byte(0xFF0F, int_flag);
     }
 }
 
@@ -88,7 +83,7 @@ impl Memory for Mmu {
             0xC000..=0xFDFF => self.wram.read_byte(addr),
             0xFE00..=0xFE9F => self.oam[(addr - 0xFE00) as usize],
             0xFF04..=0xFF07 => self.timer.read_byte(addr),
-            //0xFF00..=0xFF7F => self.io[(addr - 0xFF00) as usize],
+            0xFF00..=0xFF7F => self.io[(addr - 0xFF00) as usize],
             0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize],
             0xFFFF => self.ie as u8,
             _ => unimplemented!(),
@@ -102,7 +97,7 @@ impl Memory for Mmu {
             0xC000..=0xFDFF => self.wram.write_byte(addr, val),
             0xFE00..=0xFE9F => self.oam[(addr - 0xFE00) as usize] = val,
             0xFF04..=0xFF07 => self.timer.write_byte(addr, val),
-            //0xFF00..=0xFF7F => self.io[(addr - 0xFF00) as usize] = val,
+            0xFF00..=0xFF7F => self.io[(addr - 0xFF00) as usize] = val,
             0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize] = val,
             0xFFFF => match val {
                 0 => self.ie = false,
@@ -111,4 +106,11 @@ impl Memory for Mmu {
             _ => unimplemented!(),
         };
     }
+}
+
+#[cfg(test)]
+mod mmu_tests {
+    use super::*;
+    #[test]
+    fn interrupt_requests() {}
 }
