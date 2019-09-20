@@ -459,7 +459,8 @@ impl Cpu {
     /// Returns the number of cycles executed.
     pub fn tick(&mut self, mmu: &mut mmu::Mmu) -> usize {
         let old_pc = self.reg.pc;
-        let opcode = self.imm(mmu);
+        let mut opcode = self.imm(mmu);
+        let mut using_cb: bool = false;
         trace!(
             "0x{:04X}: 0x{:02X} {}",
             old_pc,
@@ -1043,8 +1044,9 @@ impl Cpu {
 
             // CB Prefix
             0xCB => {
-                let cb_opcode = self.imm(mmu);
-                match cb_opcode {
+                opcode = self.imm(mmu);
+                using_cb = true;
+                match opcode {
                     0x00 => {
                         let v = self.rlc(self.reg.b);
                         self.reg.b = v;
@@ -1549,12 +1551,15 @@ impl Cpu {
                         mmu.write_byte(self.reg.get_hl(), v);
                     }
                     0xFF => self.reg.a = self.set(self.reg.a, 7),
-                    _ => panic!("Unsupported or unimplemented opcode 0xCB {:X}", opcode),
                 }
             }
             _ => panic!("Unsupported or unimplemented opcode 0x{:X}", opcode),
         };
-        OPCODE_TABLE[opcode as usize] + cond_cycles
+        if using_cb {
+            OPCODE_CB_TABLE[opcode as usize]
+        } else {
+            OPCODE_TABLE[opcode as usize] + cond_cycles
+        }
     }
 
     /// Reads and returns the value at the current PC location
