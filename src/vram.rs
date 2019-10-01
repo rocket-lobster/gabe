@@ -103,6 +103,29 @@ impl Stat {
     }
 }
 
+impl Memory for Stat {
+    fn read_byte(&self, addr: u16) -> u8 {
+        assert_eq!(0xFF41, addr);
+        let mut v = 0;
+        v |= (self.lyc_ly_interrupt as u8) << 6;
+        v |= (self.oam_interrupt as u8) << 5;
+        v |= (self.vblank_interrupt as u8) << 4;
+        v |= (self.hblank_interrupt as u8) << 3;
+        v |= (self.lyc_ly_flag as u8) << 2;
+        v |= self.mode_flag;
+        v
+    }
+    fn write_byte(&mut self, addr: u16, val: u8) {
+        assert_eq!(0xFF41, addr);
+        self.lyc_ly_interrupt = (val & 0x40) != 0x0;
+        self.oam_interrupt = (val & 0x20) != 0x0;
+        self.vblank_interrupt = (val & 0x10) != 0x0;
+        self.hblank_interrupt = (val & 0x08) != 0x0;
+        self.lyc_ly_flag = (val & 0x04) != 0x0;
+        self.mode_flag = val & 0x03;
+    }
+}
+
 pub struct Vram {
     lcdc: Lcdc,
     stat: Stat,
@@ -121,11 +144,47 @@ impl Vram {
 
 impl Memory for Vram {
     fn read_byte(&self, addr: u16) -> u8 {
-        assert!(addr >= 0x8000 && addr <= 0x9FFF);
-        self.memory[(addr - 0x8000) as usize]
+        match addr {
+            0x8000..=0x9FFF => self.memory[(addr - 0x8000) as usize],
+            0xFF40 => self.lcdc.read_byte(addr),
+            0xFF41 => self.stat.read_byte(addr),
+            _ => panic!("Incorrect addressing in VRAM: {:X}", addr)
+        }
+        
     }
     fn write_byte(&mut self, addr: u16, val: u8) {
-        assert!(addr >= 0x8000 && addr <= 0x9FFF);
-        self.memory[(addr - 0x8000) as usize] = val;
+        match addr {
+            0x8000..=0x9FFF => self.memory[(addr - 0x8000) as usize] = val,
+            0xFF40 => self.lcdc.write_byte(addr, val),
+            0xFF41 => self.stat.write_byte(addr, val),
+            _ => panic!("Incorrect addressing in VRAM: {:X}", addr)
+        }
+    }
+}
+
+#[cfg(test)]
+mod vram_tests {
+    use super::*;
+    #[test]
+    fn stat_read_write() {
+        let mut stat = Stat::power_on();
+        stat.write_byte(0xFF41, 0b0110_0101);
+        assert_eq!(true, stat.lyc_ly_interrupt);
+        assert_eq!(true, stat.oam_interrupt);
+        assert_eq!(false, stat.vblank_interrupt);
+        assert_eq!(false, stat.hblank_interrupt);
+        assert_eq!(true, stat.lyc_ly_flag);
+        assert_eq!(1, stat.mode_flag);
+        
+        stat = Stat {
+            lyc_ly_interrupt: false,
+            oam_interrupt: true,
+            vblank_interrupt: false,
+            hblank_interrupt: true,
+            lyc_ly_flag: true,
+            mode_flag: 2,
+        };
+        let v = stat.read_byte(0xFF41);
+        assert_eq!(0b0010_1110, v);
     }
 }
