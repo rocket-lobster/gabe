@@ -26,7 +26,7 @@ impl Gameboy {
     pub fn step(&mut self) {
         // Calculate the number of cycles in 1/60th of a second
         // CPU Clock rate / 60 = Cycles per 1/60th second, i.e. frame
-        const CYCLES_PER_FRAME: usize = 4194304 / 60;
+        const CYCLES_PER_FRAME: usize = 4_194_304 / 60;
 
         // Run until we reach the number of cycles in one video frame
         while self.frame_cycles < CYCLES_PER_FRAME {

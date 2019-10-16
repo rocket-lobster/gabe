@@ -66,7 +66,7 @@ impl Mmu {
 
     /// Takes the given Interrupt enum value, and sets the corresponding bit
     /// in the IF register
-    fn request_interrupt(&mut self, int: Interrupt) {
+    pub fn request_interrupt(&mut self, int: Interrupt) {
         // Grab the IF register of current interrupt requests
         let mut int_flag = self.read_byte(0xFF0F);
         int_flag |= int as u8;

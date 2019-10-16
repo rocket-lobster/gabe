@@ -68,25 +68,25 @@ impl Registers {
     /// Returns a 16-bit value where
     /// A is the hi 8-bits and F is the lo 8-bits
     fn get_af(&self) -> u16 {
-        ((self.a as u16) << 8) | (self.f as u16)
+        (u16::from(self.a) << 8) | u16::from(self.f)
     }
 
     /// Returns a 16-bit value where
     /// B is the hi 8-bits and C is the lo 8-bits
     fn get_bc(&self) -> u16 {
-        ((self.b as u16) << 8) | (self.c as u16)
+        (u16::from(self.b) << 8) | u16::from(self.c)
     }
 
     /// Returns a 16-bit value where
     /// D is the hi 8-bits and E is the lo 8-bits
     fn get_de(&self) -> u16 {
-        ((self.d as u16) << 8) | (self.e as u16)
+        (u16::from(self.d) << 8) | u16::from(self.e)
     }
 
     /// Returns a 16-bit value where
     /// H is the hi 8-bits and L is the lo 8-bits
     fn get_hl(&self) -> u16 {
-        ((self.h as u16) << 8) | (self.l as u16)
+        (u16::from(self.h) << 8) | u16::from(self.l)
     }
 
     /// Sets a 16-bit value where
@@ -118,10 +118,11 @@ impl Registers {
     }
 
     fn set_flag(&mut self, f: Flag, v: bool) {
-        match v {
-            true => self.f |= f as u8,
-            false => self.f &= !(f as u8),
-        };
+        if v {
+            self.f |= f as u8;
+        } else {
+            self.f &= !(f as u8);
+        }
     }
 
     fn get_flag(&mut self, f: Flag) -> bool {
@@ -1576,7 +1577,7 @@ impl Cpu {
     fn imm_word(&mut self, mmu: &mut mmu::Mmu) -> u16 {
         let lo = self.imm(mmu);
         let hi = self.imm(mmu);
-        ((hi as u16) << 8) | (lo as u16)
+        (u16::from(hi) << 8) | u16::from(lo)
     }
 
     fn stack_push(&mut self, mmu: &mut mmu::Mmu, v: u16) {
@@ -1843,7 +1844,7 @@ impl Cpu {
     /// - C: Set to value of `r` bit 7, before the shift
     fn rl(&mut self, r: u8) -> u8 {
         let mut v = r << 1;
-        v = v | (self.reg.get_flag(Flag::C) as u8);
+        v |= self.reg.get_flag(Flag::C) as u8;
         self.reg.set_flag(Flag::Z, v == 0);
         self.reg.set_flag(Flag::N, false);
         self.reg.set_flag(Flag::H, false);
@@ -1861,7 +1862,7 @@ impl Cpu {
     /// - C: Set to value of `r` bit 0, before the shift
     fn rr(&mut self, r: u8) -> u8 {
         let mut v = r >> 1;
-        v = v | ((self.reg.get_flag(Flag::C) as u8) << 7);
+        v |= (self.reg.get_flag(Flag::C) as u8) << 7;
         self.reg.set_flag(Flag::Z, v == 0);
         self.reg.set_flag(Flag::N, false);
         self.reg.set_flag(Flag::H, false);
@@ -1954,8 +1955,7 @@ impl Cpu {
     /// - H: None
     /// - C: None
     fn res(&mut self, r: u8, b: u8) -> u8 {
-        let v = r & !(0x1 << b);
-        v
+        r & !(0x1 << b)
     }
 
     /// Set bit `b` in register `r`
@@ -1966,8 +1966,7 @@ impl Cpu {
     /// - H: None
     /// - C: None
     fn set(&mut self, r: u8, b: u8) -> u8 {
-        let v = r | (0x1 << b);
-        v
+        r | (0x1 << b)
     }
 }
 
