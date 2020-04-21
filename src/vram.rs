@@ -126,9 +126,97 @@ impl Memory for Stat {
     }
 }
 
+#[derive(Copy, Clone)]
+enum GrayShades {
+    White = 0,
+    LightGray = 1,
+    DarkGray = 2,
+    Black = 3,
+}
+
+struct PaletteData {
+    color0: GrayShades,
+    color1: GrayShades,
+    color2: GrayShades,
+    color3: GrayShades,
+}
+
+impl PaletteData {
+    fn init() -> Self {
+        PaletteData {
+            color0: GrayShades::White,
+            color1: GrayShades::White,
+            color2: GrayShades::White,
+            color3: GrayShades::White,
+        }
+    }
+}
+
+impl Memory for PaletteData {
+    fn read_byte(&self, addr: u16) -> u8 {
+        match addr {
+            0xFF47 => {
+                let mut ret: u8 = 0x0;
+                ret |= self.color0 as u8;
+                ret
+            }
+            _ => unimplemented!()
+        }
+    }
+    fn write_byte(&mut self, addr: u16, val: u8) {
+
+    }
+}
+
 pub struct Vram {
+    /// 0xFF40: LCD Control
     lcdc: Lcdc,
+
+    /// 0xFF41: LCDC Status
     stat: Stat,
+
+    /// (0xFF43, 0xFF42): (Scroll X, Scroll Y)
+    ///
+    /// The X and Y coordinates of top left of the display window. (0,0) represents the top left,
+    /// (255, 255) bottom right.
+    scroll_coords: (u8, u8),
+
+    /// 0xFF44: LCDC Y-Coordinate
+    ///
+    /// Indicates the current Y-coordinate on the LCD, 0-153, with 144-153 indicating V-Blank
+    /// Writing to this address resets the value to 0.
+    ly: u8,
+
+    /// 0xFF45: LY Compare
+    ///
+    /// Compares its value to LY, and when equal, sets the STAT Coincident Bit and requests
+    /// a STAT Interrupt
+    lyc: u8,
+
+    /// 0xFF47: BG Palette Data
+    ///
+    /// Assigns gray shades to the Background and Window tiles, with four different color numbers.
+    bgp: PaletteData,
+
+    /// 0xFF48: Object Palette 0 Data
+    ///
+    /// Assigns gray shades to the sprite palette 0. Only Color Number 3-1 are recognized, with Color Number 0 
+    /// always being transparent
+    obp0: PaletteData,
+
+    /// 0xFF49: Object Palette 1 Data
+    ///
+    /// Assigns gray shades to the sprite palette 1. Only Color Number 3-1 are recognized, with Color Number 0 
+    /// always being transparent
+    obp1: PaletteData,
+
+    /// (0xFF4B, 0xFF4A): (Window X, Window Y)
+    ///
+    /// The coordinates of the upper left of the Window area. Window X Position is
+    /// minus 7 of the value, Window Y Position is normal.
+    /// Window X = 7 and Window = 0 represents a Window position at the top left of the LCD
+    window_coords: (u8, u8),
+
     memory: Vec<u8>,
 }
 
@@ -137,6 +225,13 @@ impl Vram {
         Vram {
             lcdc: Lcdc::power_on(),
             stat: Stat::power_on(),
+            scroll_coords: (0x0, 0x0),
+            ly: 0x0,
+            lyc: 0x0,
+            bgp: PaletteData::init(),
+            obp0: PaletteData::init(),
+            obp1: PaletteData::init(),
+            window_coords: (0x0, 0x0),
             memory: vec![0; 0x2000],
         }
     }
@@ -148,16 +243,27 @@ impl Memory for Vram {
             0x8000..=0x9FFF => self.memory[(addr - 0x8000) as usize],
             0xFF40 => self.lcdc.read_byte(addr),
             0xFF41 => self.stat.read_byte(addr),
-            _ => panic!("Incorrect addressing in VRAM: {:X}", addr)
+            0xFF42 => self.scroll_coords.1,
+            0xFF43 => self.scroll_coords.0,
+            0xFF44 => self.ly,
+            0xFF45 => self.lyc,
+            0xFF4A => self.window_coords.1,
+            0xFF4B => self.window_coords.0,
+            _ => panic!("Incorrect addressing in VRAM: {:X}", addr),
         }
-        
     }
     fn write_byte(&mut self, addr: u16, val: u8) {
         match addr {
             0x8000..=0x9FFF => self.memory[(addr - 0x8000) as usize] = val,
             0xFF40 => self.lcdc.write_byte(addr, val),
             0xFF41 => self.stat.write_byte(addr, val),
-            _ => panic!("Incorrect addressing in VRAM: {:X}", addr)
+            0xFF42 => self.scroll_coords.1 = val,
+            0xFF43 => self.scroll_coords.0 = val,
+            0xFF44 => self.ly = 0x0,
+            0xFF45 => self.lyc = val,
+            0xFF4A => self.window_coords.1 = val,
+            0xFF4B => self.window_coords.0 = val,
+            _ => panic!("Incorrect addressing in VRAM: {:X}", addr),
         }
     }
 }
@@ -175,7 +281,6 @@ mod vram_tests {
         assert_eq!(false, stat.hblank_interrupt);
         assert_eq!(true, stat.lyc_ly_flag);
         assert_eq!(1, stat.mode_flag);
-        
         stat = Stat {
             lyc_ly_interrupt: false,
             oam_interrupt: true,

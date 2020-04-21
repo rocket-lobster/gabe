@@ -83,7 +83,7 @@ impl Memory for Mmu {
             0xC000..=0xFDFF => self.wram.read_byte(addr),
             0xFE00..=0xFE9F => self.oam[(addr - 0xFE00) as usize],
             0xFF04..=0xFF07 => self.timer.read_byte(addr),
-            0xFF00..=0xFF7F => self.io[(addr - 0xFF00) as usize],
+            0xFF40..=0xFF45 => self.vram.read_byte(addr),
             0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize],
             0xFFFF => self.ie as u8,
             _ => unimplemented!(),
@@ -97,7 +97,7 @@ impl Memory for Mmu {
             0xC000..=0xFDFF => self.wram.write_byte(addr, val),
             0xFE00..=0xFE9F => self.oam[(addr - 0xFE00) as usize] = val,
             0xFF04..=0xFF07 => self.timer.write_byte(addr, val),
-            0xFF00..=0xFF7F => self.io[(addr - 0xFF00) as usize] = val,
+            0xFF40..=0xFF45 => self.vram.write_byte(addr, val),
             0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize] = val,
             0xFFFF => match val {
                 0 => self.ie = false,
