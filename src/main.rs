@@ -5,18 +5,11 @@ extern crate env_logger;
 extern crate ggez;
 extern crate tui;
 
-mod cpu;
 mod gb;
-mod interrupt;
-mod mbc0;
-mod memory;
-mod mmu;
-mod timer;
-mod vram;
-mod wram;
 
 use clap::{App, Arg};
 use crossterm;
+use gb::gb::Gameboy;
 use ggez::conf::*;
 use ggez::graphics;
 use ggez::{event, event::EventHandler};
@@ -30,7 +23,7 @@ use tui::widgets::{Block, Borders, Paragraph, Text};
 use tui::Terminal;
 
 struct Emulator {
-    gb: gb::Gameboy,
+    gb: gb::gb::Gameboy,
     debug: bool,
     tui: Option<Terminal<CrosstermBackend<io::Stdout>>>,
 }
@@ -43,13 +36,13 @@ impl Emulator {
             let mut terminal = Terminal::new(backend).unwrap();
             terminal.clear().unwrap();
             Emulator {
-                gb: gb::Gameboy::power_on(path).expect("Path invalid"),
+                gb: Gameboy::power_on(path).expect("Path invalid"),
                 debug,
                 tui: Some(terminal),
             }
         } else {
             Emulator {
-                gb: gb::Gameboy::power_on(path).expect("Path invalid"),
+                gb: Gameboy::power_on(path).expect("Path invalid"),
                 debug,
                 tui: None,
             }
