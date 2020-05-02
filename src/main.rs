@@ -5,82 +5,43 @@ extern crate env_logger;
 extern crate ggez;
 extern crate tui;
 
-mod gb;
+mod core;
+mod debugger;
 
+use crate::core::gb::Gameboy;
 use clap::{App, Arg};
-use crossterm;
-use gb::gb::Gameboy;
+use debugger::{Debugger, DebuggerState};
 use ggez::conf::*;
 use ggez::graphics;
 use ggez::{event, event::EventHandler};
 use ggez::{Context, ContextBuilder, GameResult};
-use std::io;
 use std::path::Path;
-use std::time::Duration;
-use tui::backend::CrosstermBackend;
-use tui::layout::{Alignment, Constraint, Direction, Layout};
-use tui::widgets::{Block, Borders, Paragraph, Text};
-use tui::Terminal;
 
 struct Emulator {
-    gb: gb::gb::Gameboy,
-    debug: bool,
-    tui: Option<Terminal<CrosstermBackend<io::Stdout>>>,
+    gb: Gameboy,
+    debugger: Debugger,
 }
 
 impl Emulator {
     pub fn power_on(path: impl AsRef<Path>, debug: bool) -> Self {
-        if debug {
-            let stdout = io::stdout();
-            let backend = CrosstermBackend::new(stdout);
-            let mut terminal = Terminal::new(backend).unwrap();
-            terminal.clear().unwrap();
-            Emulator {
-                gb: Gameboy::power_on(path).expect("Path invalid"),
-                debug,
-                tui: Some(terminal),
-            }
-        } else {
-            Emulator {
-                gb: Gameboy::power_on(path).expect("Path invalid"),
-                debug,
-                tui: None,
-            }
+        let debugger = Debugger::new(debug);
+        Emulator {
+            gb: Gameboy::power_on(path).expect("Path invalid"),
+            debugger,
         }
     }
 }
 
 impl EventHandler for Emulator {
     fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
-        if self.debug {
+        if self.debugger.is_running() {
             let state = self.gb.get_debug_state();
-            self.tui
-                .as_mut()
-                .unwrap()
-                .draw(move |mut f| {
-                    let chunks = Layout::default()
-                        .direction(Direction::Horizontal)
-                        .constraints(
-                            [Constraint::Percentage(50), Constraint::Percentage(50)].as_ref(),
-                        )
-                        .split(f.size());
-
-                    let text = [Text::raw(format!("{}", state.cpu_data))];
-                    let paragraph = Paragraph::new(text.iter())
-                        .block(Block::default().title("CPU Data").borders(Borders::ALL))
-                        .alignment(Alignment::Left)
-                        .wrap(false);
-                    f.render_widget(paragraph, chunks[0]);
-                })
-                .unwrap();
-            if crossterm::event::poll(Duration::from_millis(100)).unwrap() {
-                if let crossterm::event::Event::Key(event) = crossterm::event::read().unwrap() {
-                    match event.code {
-                        crossterm::event::KeyCode::Char('n') => self.gb.tick(),
-                        crossterm::event::KeyCode::Char('q') => self.debug = false,
-                        _ => (),
-                    }
-                };
+            let action = self.debugger.update(&state);
+            match action {
+                DebuggerState::Next => self.gb.tick(),
+                DebuggerState::Continue => self.debugger.suspend(),
+                DebuggerState::Quit => self.debugger.quit(),
+                _ => (),
             };
             Ok(())
         } else {
