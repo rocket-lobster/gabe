@@ -103,7 +103,7 @@ impl Memory for Mmu {
                 0 => self.ie = false,
                 _ => self.ie = true,
             },
-            _ => unimplemented!(),
+            _ => unimplemented!("Address: {:4X}", addr),
         };
     }
 }

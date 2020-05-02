@@ -10,6 +10,10 @@ pub struct Gameboy {
     frame_cycles: usize,
 }
 
+pub struct GbDebug {
+    pub cpu_data: cpu::Cpu,
+}
+
 impl Gameboy {
     /// Initializes Gameboy state to begin emulation on provided
     /// binary file
@@ -30,15 +34,31 @@ impl Gameboy {
 
         // Run until we reach the number of cycles in one video frame
         while self.frame_cycles < CYCLES_PER_FRAME {
-            let cycles = self.cpu.tick(&mut self.mmu);
-
-            // Update memory
-            self.mmu.update(cycles);
-            self.frame_cycles += cycles;
+            self.tick();
         }
 
         // Frame complete, setup for next frame
         self.frame_cycles -= CYCLES_PER_FRAME;
+
+        // Failsafe in case logic gets ahead of frame generation, like when debugging
+        // Prevents returning multiple duplicate frames that weren't displayed
+        while self.frame_cycles >= CYCLES_PER_FRAME {
+            self.frame_cycles -= CYCLES_PER_FRAME;
+        }
         trace!("Frame complete");
+    }
+
+    pub fn tick(&mut self) {
+        let cycles = self.cpu.tick(&mut self.mmu);
+
+            // Update memory
+        self.mmu.update(cycles);
+        self.frame_cycles += cycles;
+    }
+
+    pub fn get_debug_state(&mut self) -> GbDebug {
+        GbDebug {
+            cpu_data: self.cpu.get_debug_data()
+        }
     }
 }

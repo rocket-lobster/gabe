@@ -1,5 +1,6 @@
 use super::memory::Memory;
 use super::mmu;
+use std::fmt;
 
 /// The register F holds flag information that are set by ALU
 /// operations. Conditional operations check these flags afterwards.
@@ -125,7 +126,7 @@ impl Registers {
         }
     }
 
-    fn get_flag(&mut self, f: Flag) -> bool {
+    fn get_flag(&self, f: Flag) -> bool {
         (self.f & (f as u8)) != 0
     }
 }
@@ -438,10 +439,30 @@ const OPCODE_STRINGS: [&str; 256] = [
 /// The CPU contains Register state and is responsible for
 /// decoding each opcode at the current PC and updating
 /// the Registers and MMU when appropriate.
+#[derive(Clone)]
 pub struct Cpu {
     reg: Registers,
     ime: bool,
     halted: bool,
+}
+
+impl fmt::Display for Cpu {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "A:    {:2X}", self.reg.a)?;
+        writeln!(f, "B:    {:2X}", self.reg.b)?;
+        writeln!(f, "C:    {:2X}", self.reg.c)?;
+        writeln!(f, "D:    {:2X}", self.reg.d)?;
+        writeln!(f, "E:    {:2X}", self.reg.e)?;
+        writeln!(f, "H:    {:2X}", self.reg.h)?;
+        writeln!(f, "L:    {:2X}", self.reg.l)?;
+        writeln!(f, "F:    {:2X}", self.reg.f)?;
+        writeln!(f, "IME:    {}", self.ime)?;
+        writeln!(f, "Flags:")?;
+        writeln!(f, "   Z:   {}", self.reg.get_flag(Flag::Z))?;
+        writeln!(f, "   N:   {}", self.reg.get_flag(Flag::N))?;
+        writeln!(f, "   H:   {}", self.reg.get_flag(Flag::H))?;
+        writeln!(f, "   C:   {}", self.reg.get_flag(Flag::C))
+    }
 }
 
 impl Cpu {
@@ -453,6 +474,10 @@ impl Cpu {
             ime: false,
             halted: false,
         }
+    }
+
+    pub fn get_debug_data(&mut self) -> Cpu {
+        self.clone()
     }
 
     /// Fetches a single instruction opcode, decodes the opcode to the

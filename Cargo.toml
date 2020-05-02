@@ -11,3 +11,5 @@ clap = "2.33.0"
 log = "*"
 env_logger = "*"
 ggez = "0.5"
+crossterm = "0.17"
+tui = { version = "0.9", default-features = false, features = ['crossterm'] }
