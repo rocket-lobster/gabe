@@ -448,14 +448,15 @@ pub struct Cpu {
 
 impl fmt::Display for Cpu {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "A:    {:2X}", self.reg.a)?;
-        writeln!(f, "B:    {:2X}", self.reg.b)?;
-        writeln!(f, "C:    {:2X}", self.reg.c)?;
-        writeln!(f, "D:    {:2X}", self.reg.d)?;
-        writeln!(f, "E:    {:2X}", self.reg.e)?;
-        writeln!(f, "H:    {:2X}", self.reg.h)?;
-        writeln!(f, "L:    {:2X}", self.reg.l)?;
-        writeln!(f, "F:    {:2X}", self.reg.f)?;
+        // Implement printing for use in TUI
+        writeln!(f, "A:    {:02X}    AF:     {:04X}", self.reg.a, self.reg.get_af())?;
+        writeln!(f, "B:    {:02X}    BC:     {:04X}", self.reg.b, self.reg.get_bc())?;
+        writeln!(f, "C:    {:02X}    DE:     {:04X}", self.reg.c, self.reg.get_de())?;
+        writeln!(f, "D:    {:02X}    HL:     {:04X}", self.reg.d, self.reg.get_hl())?;
+        writeln!(f, "E:    {:02X}", self.reg.e)?;
+        writeln!(f, "H:    {:02X}", self.reg.h)?;
+        writeln!(f, "L:    {:02X}", self.reg.l)?;
+        writeln!(f, "F:    {:02X}", self.reg.f)?;
         writeln!(f, "IME:    {}", self.ime)?;
         writeln!(f, "Flags:")?;
         writeln!(f, "   Z:   {}", self.reg.get_flag(Flag::Z))?;

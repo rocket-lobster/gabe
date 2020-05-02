@@ -16,12 +16,14 @@ mod vram;
 mod wram;
 
 use clap::{App, Arg};
+use crossterm;
 use ggez::conf::*;
 use ggez::graphics;
 use ggez::{event, event::EventHandler};
 use ggez::{Context, ContextBuilder, GameResult};
 use std::io;
 use std::path::Path;
+use std::time::Duration;
 use tui::backend::CrosstermBackend;
 use tui::layout::{Alignment, Constraint, Direction, Layout};
 use tui::widgets::{Block, Borders, Paragraph, Text};
@@ -58,7 +60,6 @@ impl Emulator {
 impl EventHandler for Emulator {
     fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
         if self.debug {
-            self.gb.tick();
             let state = self.gb.get_debug_state();
             self.tui
                 .as_mut()
@@ -79,6 +80,15 @@ impl EventHandler for Emulator {
                     f.render_widget(paragraph, chunks[0]);
                 })
                 .unwrap();
+            if crossterm::event::poll(Duration::from_millis(100)).unwrap() {
+                if let crossterm::event::Event::Key(event) = crossterm::event::read().unwrap() {
+                    match event.code {
+                        crossterm::event::KeyCode::Char('n') => self.gb.tick(),
+                        crossterm::event::KeyCode::Char('q') => self.debug = false,
+                        _ => (),
+                    }
+                };
+            };
             Ok(())
         } else {
             while ggez::timer::check_update_time(ctx, 60) {
