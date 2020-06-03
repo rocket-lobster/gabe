@@ -48,6 +48,8 @@ impl Gameboy {
         trace!("Frame complete");
     }
 
+    /// Executes one CPU instruction and updates the other 
+    /// subsystems with the appropriate number of cycles
     pub fn tick(&mut self) {
         let cycles = self.cpu.tick(&mut self.mmu);
 

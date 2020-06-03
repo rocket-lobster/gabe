@@ -1,4 +1,4 @@
-use super::interrupt::Interrupt;
+use super::interrupt::InterruptKind;
 use super::memory::Memory;
 
 pub struct Timer {
@@ -41,7 +41,7 @@ impl Timer {
 
     /// Updates all the timer registers up to the same cycles as the CPU.
     /// Returns an Option with an Interrupt::Timer if the timer overflowed.
-    pub fn update(&mut self, cycles: usize) -> Option<Interrupt> {
+    pub fn update(&mut self, cycles: usize) -> Option<InterruptKind> {
         // Update DIV timer
         self.div_cycles += cycles;
         if self.div_cycles >= 256 {
@@ -56,7 +56,7 @@ impl Timer {
                 self.tima_cycles -= self.get_tima_freq();
                 if self.tima == 0x0 {
                     self.tima = self.tma;
-                    return Some(Interrupt::Timer);
+                    return Some(InterruptKind::Timer);
                 }
             }
         }

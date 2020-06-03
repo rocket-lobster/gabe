@@ -3,7 +3,7 @@ use std::io;
 use std::io::Read;
 use std::path::Path;
 
-use super::interrupt::Interrupt;
+use super::interrupt::InterruptKind;
 use super::mbc0::Mbc0;
 use super::memory::Memory;
 use super::timer::Timer;
@@ -66,11 +66,24 @@ impl Mmu {
 
     /// Takes the given Interrupt enum value, and sets the corresponding bit
     /// in the IF register
-    pub fn request_interrupt(&mut self, int: Interrupt) {
+    pub fn request_interrupt(&mut self, int: InterruptKind) {
         // Grab the IF register of current interrupt requests
         let mut int_flag = self.read_byte(0xFF0F);
         int_flag |= int as u8;
         self.write_byte(0xFF0F, int_flag);
+    }
+
+    pub fn get_memory_range(&self, start: u16, end: u16) -> Option<Vec<u8>> {
+        if start <= end {
+            let mut vec: Vec<u8> = Vec::new();
+            for addr in start..=end {
+                vec.push(self.read_byte(addr));
+            }
+            Some(vec)
+        } else {
+            None
+        }
+        
     }
 }
 

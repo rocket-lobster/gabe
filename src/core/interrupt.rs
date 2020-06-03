@@ -4,7 +4,7 @@
 ///
 /// Order represents the priority of interrupt execution when multiple
 /// interrupts are enabled and requested at once.
-pub enum Interrupt {
+pub enum InterruptKind {
     /// Vertical Blank interrupt whenever the LCD enters the V-Blank period.
     /// (INT 0x40)
     VBlank = 0b0000_0001,
@@ -22,3 +22,5 @@ pub enum Interrupt {
     /// (INT 0x60)
     Joypad = 0b0001_0000,
 }
+
+

@@ -1,5 +1,5 @@
 use crate::core::gb::GbDebug;
-use crossterm;
+use crossterm::event;
 use tui::backend::CrosstermBackend;
 use tui::layout::{Alignment, Constraint, Direction, Layout};
 use tui::widgets::{Block, Borders, Paragraph, Text};
@@ -79,11 +79,12 @@ impl Debugger {
                     f.render_widget(paragraph, chunks[0]);
                 })
                 .unwrap();
-            if crossterm::event::poll(Duration::from_millis(100)).unwrap() {
-                if let crossterm::event::Event::Key(event) = crossterm::event::read().unwrap() {
+            if event::poll(Duration::from_millis(100)).unwrap() {
+                if let event::Event::Key(event) = event::read().unwrap() {
                     match event.code {
-                        crossterm::event::KeyCode::Char('n') => ret = DebuggerState::Next,
-                        crossterm::event::KeyCode::Char('q') => ret = DebuggerState::Quit,
+                        event::KeyCode::Char('n') => ret = DebuggerState::Next,
+                        event::KeyCode::Char('q') => ret = DebuggerState::Quit,
+                        event::KeyCode::Char('c') => ret = DebuggerState::Continue,
                         _ => (),
                     }
                 };
