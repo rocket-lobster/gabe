@@ -12,7 +12,7 @@ use crate::core::gb::Gameboy;
 use clap::{App, Arg};
 use debugger::{Debugger, DebuggerState};
 use ggez::conf::*;
-use ggez::graphics;
+use ggez::graphics::{self, Color};
 use ggez::{event, event::EventHandler};
 use ggez::{Context, ContextBuilder, GameResult};
 use std::path::Path;
@@ -32,7 +32,7 @@ impl Emulator {
     }
 }
 
-impl EventHandler for Emulator {
+impl EventHandler<ggez::GameError> for Emulator {
     fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
         if self.debugger.is_running() {
             let state = self.gb.get_debug_state();
@@ -52,7 +52,7 @@ impl EventHandler for Emulator {
         }
     }
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
-        graphics::clear(ctx, graphics::WHITE);
+        graphics::clear(ctx, Color::WHITE);
         graphics::present(ctx)
     }
 }
@@ -69,11 +69,13 @@ fn initialize_conf() -> Conf {
         max_width: 0.0,
         max_height: 0.0,
         resizable: false,
+        visible: true,
+        resize_on_scale_factor_change: false,
     };
 
     let window_setup = WindowSetup {
         title: "GaBE".to_owned(),
-        samples: NumSamples::Zero,
+        samples: NumSamples::One,
         vsync: true,
         icon: "".to_owned(),
         srgb: false,
@@ -118,13 +120,10 @@ fn main() {
     let debug_enabled = matches.is_present("debug");
 
     // Rendering window
-    let (mut ctx, mut event_loop) = ContextBuilder::new("GaBE", "Joe Thill")
-        .conf(initialize_conf())
+    let (ctx, event_loop) = ContextBuilder::new("GaBE", "Joe Thill")
+        .default_conf(initialize_conf())
         .build()
         .unwrap();
-    let mut emu = Emulator::power_on(rom_file, debug_enabled);
-    match event::run(&mut ctx, &mut event_loop, &mut emu) {
-        Ok(_) => info!("Exiting"),
-        Err(e) => error!("{}", e),
-    }
+    let emu = Emulator::power_on(rom_file, debug_enabled);
+    event::run(ctx, event_loop, emu);
 }

@@ -28,6 +28,7 @@ impl Debugger {
     pub fn new(enabled: bool) -> Self {
         if enabled {
             let stdout = io::stdout();
+            crossterm::terminal::enable_raw_mode().expect("Raw Mode Required");
             let backend = CrosstermBackend::new(stdout);
             let mut tui = Terminal::new(backend).unwrap();
             tui.clear().unwrap();
