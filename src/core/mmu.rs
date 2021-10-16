@@ -3,7 +3,9 @@ use std::io;
 use std::io::Read;
 use std::path::Path;
 
+use super::apu::Apu;
 use super::interrupt::InterruptKind;
+use super::joypad::Joypad;
 use super::mbc0::Mbc0;
 use super::memory::Memory;
 use super::timer::Timer;
@@ -13,16 +15,18 @@ use super::wram::Wram;
 /// The state of all Gameboy memory, both internal memory and external cartridge memory
 ///
 /// This structure is used whenever the CPU needs to write into or read from memory,
-/// and Mmu then handles any appropriate bank switching, depending on the provided game.
-/// Also handles game saves when appropriate.
+/// and then each block provides the services necessary when updated. MMU only handles
+/// reading and writing into each block, no logic is performed otherwise.
 pub struct Mmu {
     cart: Box<dyn Memory>,
+    apu: Apu,
     vram: Vram,
     wram: Wram,
     timer: Timer,
+    joypad: Joypad,
     oam: [u8; 0xA0],
-    io: [u8; 0x80],
     hram: [u8; 0x7F],
+    intf: u8,
     ie: bool,
 }
 
@@ -41,12 +45,14 @@ impl Mmu {
         };
         let mmu = Mmu {
             cart,
+            apu: Apu::power_on(),
             vram: Vram::power_on(),
             wram: Wram::power_on(),
             timer: Timer::power_on(),
+            joypad: Joypad::power_on(),
             oam: [0; 0xA0],
-            io: [0; 0x80],
             hram: [0; 0x7F],
+            intf: 0,
             ie: false,
         };
 
@@ -54,7 +60,9 @@ impl Mmu {
     }
 
     /// Updates all memory components to align with the number of cycles
-    /// run by the CPU, given by `cycles`
+    /// run by the CPU, given by `cycles`. 
+    /// Handles updates in response to Interrupts being returned by each 
+    /// block, for the CPU to handle on the next fetch.
     pub fn update(&mut self, cycles: usize) {
         // Update APU
         // Update VRAM
@@ -65,7 +73,7 @@ impl Mmu {
     }
 
     /// Takes the given Interrupt enum value, and sets the corresponding bit
-    /// in the IF register
+    /// in the IF register. CPU will run interrupt handler on next fetch cycle.
     pub fn request_interrupt(&mut self, int: InterruptKind) {
         // Grab the IF register of current interrupt requests
         let mut int_flag = self.read_byte(0xFF0F);
@@ -73,6 +81,9 @@ impl Mmu {
         self.write_byte(0xFF0F, int_flag);
     }
 
+    /// Debug function. Returns a simple Vec of the requested range of data. Only returns
+    /// data visible to MMU, so any non-selected banks or block-internal data not memory-mapped
+    /// will not be returned.
     pub fn get_memory_range(&self, start: u16, end: u16) -> Option<Vec<u8>> {
         if start <= end {
             let mut vec: Vec<u8> = Vec::new();
@@ -95,8 +106,11 @@ impl Memory for Mmu {
             0xA000..=0xBFFF => self.cart.read_byte(addr),
             0xC000..=0xFDFF => self.wram.read_byte(addr),
             0xFE00..=0xFE9F => self.oam[(addr - 0xFE00) as usize],
+            0xFF00 => self.joypad.read_byte(addr),
             0xFF04..=0xFF07 => self.timer.read_byte(addr),
-            0xFF40..=0xFF45 => self.vram.read_byte(addr),
+            0xFF0F => self.intf,
+            0xFF10..=0xFF2F => self.apu.read_byte(addr),
+            0xFF40..=0xFF6F => self.vram.read_byte(addr),
             0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize],
             0xFFFF => self.ie as u8,
             _ => unimplemented!(),
@@ -109,8 +123,11 @@ impl Memory for Mmu {
             0xA000..=0xBFFF => self.cart.write_byte(addr, val),
             0xC000..=0xFDFF => self.wram.write_byte(addr, val),
             0xFE00..=0xFE9F => self.oam[(addr - 0xFE00) as usize] = val,
+            0xFF00 => self.joypad.write_byte(addr, val),
             0xFF04..=0xFF07 => self.timer.write_byte(addr, val),
-            0xFF40..=0xFF45 => self.vram.write_byte(addr, val),
+            0xFF0F => self.intf = val,
+            0xFF10..=0xFF2F => self.apu.write_byte(addr, val),
+            0xFF40..=0xFF6F => self.vram.write_byte(addr, val),
             0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize] = val,
             0xFFFF => match val {
                 0 => self.ie = false,

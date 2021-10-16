@@ -1,6 +1,8 @@
 pub mod gb;
+mod apu;
 mod cpu;
 mod interrupt;
+mod joypad;
 mod mbc0;
 mod memory;
 mod mmu;

@@ -1,3 +1,5 @@
+use crate::core::interrupt::InterruptKind;
+
 use super::memory::Memory;
 use super::mmu;
 use std::fmt;
@@ -449,10 +451,30 @@ pub struct Cpu {
 impl fmt::Display for Cpu {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Implement printing for use in TUI
-        writeln!(f, "A:    {:02X}    AF:     {:04X}", self.reg.a, self.reg.get_af())?;
-        writeln!(f, "B:    {:02X}    BC:     {:04X}", self.reg.b, self.reg.get_bc())?;
-        writeln!(f, "C:    {:02X}    DE:     {:04X}", self.reg.c, self.reg.get_de())?;
-        writeln!(f, "D:    {:02X}    HL:     {:04X}", self.reg.d, self.reg.get_hl())?;
+        writeln!(
+            f,
+            "A:    {:02X}    AF:     {:04X}",
+            self.reg.a,
+            self.reg.get_af()
+        )?;
+        writeln!(
+            f,
+            "B:    {:02X}    BC:     {:04X}",
+            self.reg.b,
+            self.reg.get_bc()
+        )?;
+        writeln!(
+            f,
+            "C:    {:02X}    DE:     {:04X}",
+            self.reg.c,
+            self.reg.get_de()
+        )?;
+        writeln!(
+            f,
+            "D:    {:02X}    HL:     {:04X}",
+            self.reg.d,
+            self.reg.get_hl()
+        )?;
         writeln!(f, "E:    {:02X}", self.reg.e)?;
         writeln!(f, "H:    {:02X}", self.reg.h)?;
         writeln!(f, "L:    {:02X}", self.reg.l)?;
@@ -481,10 +503,97 @@ impl Cpu {
         self.clone()
     }
 
+    fn check_interrupts(&mut self, mmu: &mut mmu::Mmu) -> usize {
+        // Check if any enabled interrupts were requested
+        let mut interrupt_reqs = mmu.read_byte(0xFF0F);
+        let interrupt_enables = mmu.read_byte(0xFFFF);
+        let interrupt_result = interrupt_reqs & interrupt_enables;
+        if interrupt_result == 0x0 {
+            // No interrupts were both requested and enabled
+            0
+        } else {
+            // If we're halted, exit on an interrupt
+            self.halted = false;
+            let mut cycles = 0;
+            if !self.ime {
+                // No longer halted, exit if we cannot handle interrupts
+                cycles
+            } else {
+                if (interrupt_result & InterruptKind::VBlank as u8) != 0x0 {
+                    // V-Blank interrupt
+                    // Reset the request flag to the interrupt
+                    interrupt_reqs &= !(InterruptKind::VBlank as u8);
+                    mmu.write_byte(0xFF0F, interrupt_reqs);
+
+                    // Run CALL on V-Blank procedure
+                    self.stack_push(mmu, self.reg.pc);
+                    self.reg.pc = 0x40;
+                    cycles = 16;
+                } else if (interrupt_result & InterruptKind::LcdStat as u8) != 0x0 {
+                    // LCD STAT Interrupt
+                    // Reset the request flag to the interrupt
+                    interrupt_reqs &= !(InterruptKind::LcdStat as u8);
+                    mmu.write_byte(0xFF0F, interrupt_reqs);
+
+                    // Run CALL on LCD Stat procedure
+                    self.stack_push(mmu, self.reg.pc);
+                    self.reg.pc = 0x48;
+                    cycles = 16;
+                } else if (interrupt_result & InterruptKind::Timer as u8) != 0x0 {
+                    // Timer Interrupt
+                    // Reset the request flag to the interrupt
+                    interrupt_reqs &= !(InterruptKind::Timer as u8);
+                    mmu.write_byte(0xFF0F, interrupt_reqs);
+
+                    // Run CALL on Timer procedure
+                    self.stack_push(mmu, self.reg.pc);
+                    self.reg.pc = 0x50;
+                    cycles = 16;
+                } else if (interrupt_result & InterruptKind::Serial as u8) != 0x0 {
+                    // Serial Interrupt
+                    // Reset the request flag to the interrupt
+                    interrupt_reqs &= !(InterruptKind::Serial as u8);
+                    mmu.write_byte(0xFF0F, interrupt_reqs);
+
+                    // Run CALL on Serial procedure
+                    self.stack_push(mmu, self.reg.pc);
+                    self.reg.pc = 0x58;
+                    cycles = 16;
+                } else if (interrupt_result & InterruptKind::Joypad as u8) != 0x0 {
+                    // Joypad Interrupt
+                    // Reset the request flag to the interrupt
+                    interrupt_reqs &= !(InterruptKind::Joypad as u8);
+                    mmu.write_byte(0xFF0F, interrupt_reqs);
+
+                    // Run CALL on Joypad procedure
+                    self.stack_push(mmu, self.reg.pc);
+                    self.reg.pc = 0x60;
+                    cycles = 16;
+                }
+                self.ime = false;
+                cycles
+            }
+        }
+    }
+
     /// Fetches a single instruction opcode, decodes the opcode to the
     /// appropriate function, and executes the functionality.
     /// Returns the number of cycles executed.
     pub fn tick(&mut self, mmu: &mut mmu::Mmu) -> usize {
+
+        if self.ime || self.halted {
+            // If CPU is halted or IME is enabled, check if there's any interrupts to execute
+            let c = self.check_interrupts(mmu);
+            if c > 0 {
+                // Running interrupt routine, return cycles
+                return c;
+            }
+        }
+
+        if self.halted {
+            // Check if still halted after running interrupt checks
+            return OPCODE_TABLE[0];
+        }
         let old_pc = self.reg.pc;
         let mut opcode = self.imm(mmu);
         let mut using_cb: bool = false;
@@ -1029,6 +1138,8 @@ impl Cpu {
                     cond_cycles = 12;
                 }
             }
+
+            // RETI
             0xD9 => {
                 let a = self.stack_pop(mmu);
                 self.reg.pc = a;

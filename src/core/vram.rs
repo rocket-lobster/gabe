@@ -1,3 +1,4 @@
+use super::interrupt::InterruptKind;
 use super::memory::Memory;
 
 struct Lcdc {
@@ -68,8 +69,32 @@ impl Memory for Lcdc {
     }
 }
 
-/// 0xFF41: The STAT register in the LCD controller. Contains interrupt flags set as
-/// the LCD controller operates.
+
+/// Enumeration representing the different LCD Modes that can be active
+/// at a given time. Useful for checking the state of the LCD Controller
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum LCDMode {
+    /// Mode 0: The LCD controller is in the H-Blank period and
+    /// the CPU can access both the display RAM (8000h-9FFFh)
+    /// and OAM (FE00h-FE9Fh)
+    Mode0 = 0b00,
+    /// Mode 1: The LCD contoller is in the V-Blank period (or the
+    /// display is disabled) and the CPU can access both the
+    /// display RAM (8000h-9FFFh) and OAM (FE00h-FE9Fh)
+    Mode1 = 0b01,
+    /// Mode 2: The LCD controller is reading from OAM memory.
+    /// The CPU <cannot> access OAM memory (FE00h-FE9Fh)
+    /// during this period.
+    Mode2 = 0b10,
+    /// Mode 3: The LCD controller is reading from both OAM and VRAM,
+    /// The CPU <cannot> access OAM and VRAM during this period.
+    /// CGB Mode: Cannot access Palette Data (FF69,FF6B) either.
+    Mode3 = 0b11,
+}
+
+/// 0xFF41: The STAT register in the LCD controller. Contains interrupt flag enables
+/// for the different types of LCD STAT interrupts that can be raised. Also contains
+/// the LYC=LY flag and Mode flag to indicate which mode is active.
 struct Stat {
     /// Bit 6: LYC=LY Coincidence Interrupt
     lyc_ly_interrupt: bool,
@@ -87,7 +112,7 @@ struct Stat {
     ///     - 01: During V-Blank
     ///     - 10: During OAM Search
     ///     - 11: During Data transfer to LCD
-    mode_flag: u8,
+    mode_flag: LCDMode,
 }
 
 impl Stat {
@@ -98,7 +123,7 @@ impl Stat {
             vblank_interrupt: false,
             hblank_interrupt: false,
             lyc_ly_flag: false,
-            mode_flag: 0,
+            mode_flag: LCDMode::Mode2,
         }
     }
 }
@@ -112,7 +137,7 @@ impl Memory for Stat {
         v |= (self.vblank_interrupt as u8) << 4;
         v |= (self.hblank_interrupt as u8) << 3;
         v |= (self.lyc_ly_flag as u8) << 2;
-        v |= self.mode_flag;
+        v |= self.mode_flag as u8;
         v
     }
     fn write_byte(&mut self, addr: u16, val: u8) {
@@ -122,7 +147,13 @@ impl Memory for Stat {
         self.vblank_interrupt = (val & 0x10) != 0x0;
         self.hblank_interrupt = (val & 0x08) != 0x0;
         self.lyc_ly_flag = (val & 0x04) != 0x0;
-        self.mode_flag = val & 0x03;
+        self.mode_flag = match val & 0x03 {
+            0b00 => LCDMode::Mode0,
+            0b01 => LCDMode::Mode1,
+            0b10 => LCDMode::Mode2,
+            0b11 => LCDMode::Mode3,
+            _ => LCDMode::Mode0,
+        };
     }
 }
 
@@ -217,6 +248,10 @@ pub struct Vram {
     /// Window X = 7 and Window = 0 represents a Window position at the top left of the LCD
     window_coords: (u8, u8),
 
+    /// Number of cycles, or dots, that the LCD is in the current scanline. Max is 456, and value
+    /// determines which Mode the LCD is in. Corresponds to CPU cycles passed in to MMU.
+    scanline_cycles: usize,
+
     memory: Vec<u8>,
 }
 
@@ -232,8 +267,34 @@ impl Vram {
             obp0: PaletteData::init(),
             obp1: PaletteData::init(),
             window_coords: (0x0, 0x0),
+            scanline_cycles: 0,
             memory: vec![0; 0x2000],
         }
+    }
+
+    pub fn update(&mut self, cycles: usize) -> ([u8; 160*144], Option<InterruptKind>) {
+        let mut display = [0; 160*144];
+
+        // If LCD is disabled, nothing is done, blank display
+        if !self.lcdc.lcd_enable || cycles == 0 {
+            return (display, None);
+        } 
+        // Update the LCD state for the number of cycles given
+        // Add cycles to the number of dots to determine
+        // - Which mode we stay/change to
+        // - Whether we move to the next line (Increment LY)
+        // - Do a LYC=LY compare and set the appropriate flags/interrupts
+        // - Do an interrupt if we change modes
+        // - Do an interrupt if we enter H-Blank/V-Blank
+        self.scanline_cycles += cycles;
+
+        if self.scanline_cycles >= 456 {
+            // Reached end of scanline, wrap around and increment LY
+            self.scanline_cycles %= 456;
+            self.ly = (self.ly + 1) % 153; 
+        }
+
+        (display, None)
     }
 }
 
@@ -280,14 +341,14 @@ mod vram_tests {
         assert_eq!(false, stat.vblank_interrupt);
         assert_eq!(false, stat.hblank_interrupt);
         assert_eq!(true, stat.lyc_ly_flag);
-        assert_eq!(1, stat.mode_flag);
+        assert_eq!(LCDMode::Mode1, stat.mode_flag);
         stat = Stat {
             lyc_ly_interrupt: false,
             oam_interrupt: true,
             vblank_interrupt: false,
             hblank_interrupt: true,
             lyc_ly_flag: true,
-            mode_flag: 2,
+            mode_flag: LCDMode::Mode2,
         };
         let v = stat.read_byte(0xFF41);
         assert_eq!(0b0010_1110, v);

@@ -53,7 +53,7 @@ impl Gameboy {
     pub fn tick(&mut self) {
         let cycles = self.cpu.tick(&mut self.mmu);
 
-            // Update memory
+        // Update memory
         self.mmu.update(cycles);
         self.frame_cycles += cycles;
     }
