@@ -503,21 +503,21 @@ impl Cpu {
         self.clone()
     }
 
-    fn check_interrupts(&mut self, mmu: &mut mmu::Mmu) -> usize {
+    fn check_interrupts(&mut self, mmu: &mut mmu::Mmu) -> Option<usize> {
         // Check if any enabled interrupts were requested
         let mut interrupt_reqs = mmu.read_byte(0xFF0F);
         let interrupt_enables = mmu.read_byte(0xFFFF);
         let interrupt_result = interrupt_reqs & interrupt_enables;
         if interrupt_result == 0x0 {
             // No interrupts were both requested and enabled
-            0
+            None
         } else {
             // If we're halted, exit on an interrupt
             self.halted = false;
             let mut cycles = 0;
             if !self.ime {
                 // No longer halted, exit if we cannot handle interrupts
-                cycles
+                None
             } else {
                 if (interrupt_result & InterruptKind::VBlank as u8) != 0x0 {
                     // V-Blank interrupt
@@ -571,7 +571,7 @@ impl Cpu {
                     cycles = 16;
                 }
                 self.ime = false;
-                cycles
+                Some(cycles)
             }
         }
     }
@@ -583,8 +583,7 @@ impl Cpu {
 
         if self.ime || self.halted {
             // If CPU is halted or IME is enabled, check if there's any interrupts to execute
-            let c = self.check_interrupts(mmu);
-            if c > 0 {
+            if let Some(c) = self.check_interrupts(mmu) {
                 // Running interrupt routine, return cycles
                 return c;
             }
