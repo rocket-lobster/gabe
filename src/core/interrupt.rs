@@ -4,6 +4,7 @@
 ///
 /// Order represents the priority of interrupt execution when multiple
 /// interrupts are enabled and requested at once.
+#[derive(PartialEq)]
 pub enum InterruptKind {
     /// Vertical Blank interrupt whenever the LCD enters the V-Blank period.
     /// (INT 0x40)

@@ -1,3 +1,5 @@
+use std::panic;
+
 use super::interrupt::InterruptKind;
 use super::memory::Memory;
 
@@ -68,7 +70,6 @@ impl Memory for Lcdc {
         self.background_enable = (val & 0x01) != 0x0;
     }
 }
-
 
 /// Enumeration representing the different LCD Modes that can be active
 /// at a given time. Useful for checking the state of the LCD Controller
@@ -157,7 +158,7 @@ impl Memory for Stat {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 enum GrayShades {
     White = 0,
     LightGray = 1,
@@ -185,17 +186,32 @@ impl PaletteData {
 
 impl Memory for PaletteData {
     fn read_byte(&self, addr: u16) -> u8 {
-        match addr {
-            0xFF47 => {
-                let mut ret: u8 = 0x0;
-                ret |= self.color0 as u8;
-                ret
-            }
-            _ => unimplemented!()
-        }
+        assert!(addr == 0xFF47 || addr == 0xFF48 || addr == 0xFF49);
+        let mut ret: u8 = 0;
+        ret |= (self.color3 as u8) << 6;
+        ret |= (self.color2 as u8) << 4;
+        ret |= (self.color1 as u8) << 2;
+        ret |= self.color0 as u8;
+        ret
     }
     fn write_byte(&mut self, addr: u16, val: u8) {
-
+        assert!(addr == 0xFF47 || addr == 0xFF48 || addr == 0xFF49);
+        let mut colors: Vec<GrayShades> = vec![];
+        for i in 0..4 {
+            let v = (val >> (i *2)) & 0b11;
+            colors.push(match v { 
+                0 => GrayShades::White,
+                1 => GrayShades::LightGray,
+                2 => GrayShades::DarkGray,
+                3 => GrayShades::Black,
+                _ => panic!("Bad logic")
+            });
+        }
+        assert!(colors.len() == 4);
+        self.color0 = colors[0];
+        self.color1 = colors[1];
+        self.color2 = colors[2];
+        self.color3 = colors[3]; 
     }
 }
 
@@ -231,13 +247,13 @@ pub struct Vram {
 
     /// 0xFF48: Object Palette 0 Data
     ///
-    /// Assigns gray shades to the sprite palette 0. Only Color Number 3-1 are recognized, with Color Number 0 
+    /// Assigns gray shades to the sprite palette 0. Only Color Number 3-1 are recognized, with Color Number 0
     /// always being transparent
     obp0: PaletteData,
 
     /// 0xFF49: Object Palette 1 Data
     ///
-    /// Assigns gray shades to the sprite palette 1. Only Color Number 3-1 are recognized, with Color Number 0 
+    /// Assigns gray shades to the sprite palette 1. Only Color Number 3-1 are recognized, with Color Number 0
     /// always being transparent
     obp1: PaletteData,
 
@@ -252,6 +268,12 @@ pub struct Vram {
     /// determines which Mode the LCD is in. Corresponds to CPU cycles passed in to MMU.
     scanline_cycles: usize,
 
+    /// Data containing the rendered scanlines. Each row (scanline) is rendered on H-Blank, and the 
+    /// full screen data can be provided during V-Blank, which is when all 144 lines have completed.
+    /// Each pixel is 3 RGB values
+    screen_data: [[[u8; 3]; 160]; 144],
+
+    /// VRAM data
     memory: Vec<u8>,
 }
 
@@ -268,38 +290,93 @@ impl Vram {
             obp1: PaletteData::init(),
             window_coords: (0x0, 0x0),
             scanline_cycles: 0,
+            screen_data: [[[0x0; 3]; 160]; 144],
             memory: vec![0; 0x2000],
         }
     }
 
-    pub fn update(&mut self, cycles: usize) -> ([u8; 160*144], Option<InterruptKind>) {
-        let mut display = [0; 160*144];
+    pub fn update(&mut self, cycles: usize) -> Option<Vec<InterruptKind>> {
+        let mut interrupts: Vec<InterruptKind> = vec![];
 
         // If LCD is disabled, nothing is done, blank display
         if !self.lcdc.lcd_enable || cycles == 0 {
-            return (display, None);
-        } 
-        // Update the LCD state for the number of cycles given
-        // Add cycles to the number of dots to determine
-        // - Which mode we stay/change to
-        // - Whether we move to the next line (Increment LY)
-        // - Do a LYC=LY compare and set the appropriate flags/interrupts
-        // - Do an interrupt if we change modes
-        // - Do an interrupt if we enter H-Blank/V-Blank
+            return None;
+        }
+
+        // Each scanline is 456 dots (114 CPU cycles) long and consists of
+        // mode 2 (OAM search), mode 3 (active picture), and mode 0 (horizontal blanking).
+        // Mode 2 is 80 dots long (2 for each OAM entry), mode 3 is about 168 plus about 10 more
+        // for each sprite on a given line, and mode 0 is the rest. After 144 scanlines are drawn
+        // are 10 lines of mode 1 (vertical blanking), for a total of 154 lines or 70224 dots per screen.
+        // The CPU can't see VRAM (writes are ignored and reads are $FF) during mode 3, but it can during other modes.
+        // The CPU can't see OAM during modes 2 and 3, but it can during blanking modes (0 and 1).
+
+        // TODO: If cycles are too high, we don't want to do it all at once. Try and make sure
+        // cycles are in groups of 4, i.e. split CPU ticks to cycle operations, not instructions
         self.scanline_cycles += cycles;
 
         if self.scanline_cycles >= 456 {
             // Reached end of scanline, wrap around and increment LY
             self.scanline_cycles %= 456;
-            self.ly = (self.ly + 1) % 153; 
+            self.ly = (self.ly + 1) % 153;
+            self.stat.lyc_ly_flag = self.ly == self.lyc;
+
+            if self.stat.lyc_ly_flag
+                && self.stat.lyc_ly_interrupt
+                && !interrupts.contains(&InterruptKind::LcdStat)
+            {
+                interrupts.push(InterruptKind::LcdStat);
+            }
         }
 
-        (display, None)
+        if self.ly >= 144 {
+            // V-Blank Mode
+            if self.stat.mode_flag != LCDMode::Mode1 {
+                // If we are just entering V-Blank
+                self.stat.mode_flag = LCDMode::Mode1;
+                interrupts.push(InterruptKind::VBlank);
+                if self.stat.vblank_interrupt && !interrupts.contains(&InterruptKind::LcdStat) {
+                    interrupts.push(InterruptKind::VBlank);
+                }
+            }
+        } else if self.scanline_cycles <= 80 {
+            // First 80 scanline cycles are in Mode 2
+            if self.stat.mode_flag != LCDMode::Mode2 {
+                // We are just entering Mode 2
+                self.stat.mode_flag = LCDMode::Mode2;
+                if self.stat.oam_interrupt && !interrupts.contains(&InterruptKind::LcdStat) {
+                    interrupts.push(InterruptKind::LcdStat);
+                }
+            }
+        } else if self.scanline_cycles <= (80 + 172) {
+            // TODO: Change cycle check to be non-arbitrary, the number of cycles spent in
+            // Mode 3 is variable upon sprite drawing
+            if self.stat.mode_flag != LCDMode::Mode3 {
+                // Unnecessary, but for consistency
+                self.stat.mode_flag = LCDMode::Mode3;
+            }
+        } else {
+            // Spend the rest of the scanline in Mode 0: H-Blank
+            if self.stat.mode_flag != LCDMode::Mode0 {
+                self.stat.mode_flag = LCDMode::Mode0;
+                if self.stat.hblank_interrupt && !interrupts.contains(&InterruptKind::LcdStat) {
+                    interrupts.push(InterruptKind::LcdStat);
+                }
+                // Compute and "render" the scanline into the LCD data
+            }
+        }
+
+        if interrupts.len() > 0 {
+            Some(interrupts)
+        } else {
+            None
+        }
     }
 }
 
 impl Memory for Vram {
     fn read_byte(&self, addr: u16) -> u8 {
+        // TODO: Limit reads depending on Mode
         match addr {
             0x8000..=0x9FFF => self.memory[(addr - 0x8000) as usize],
             0xFF40 => self.lcdc.read_byte(addr),
@@ -314,6 +391,7 @@ impl Memory for Vram {
         }
     }
     fn write_byte(&mut self, addr: u16, val: u8) {
+        // TODO: Limit writes depending on Mode
         match addr {
             0x8000..=0x9FFF => self.memory[(addr - 0x8000) as usize] = val,
             0xFF40 => self.lcdc.write_byte(addr, val),
@@ -352,5 +430,16 @@ mod vram_tests {
         };
         let v = stat.read_byte(0xFF41);
         assert_eq!(0b0010_1110, v);
+    }
+
+    #[test]
+    fn palette_read_write() {
+        let mut p = PaletteData::init();
+        p.write_byte(0xFF47, 0b1101_1000);
+        assert_eq!(GrayShades::White, p.color0);
+        assert_eq!(GrayShades::DarkGray, p.color1);
+        assert_eq!(GrayShades::LightGray, p.color2);
+        assert_eq!(GrayShades::Black, p.color3);
+        assert_eq!(0b1101_1000, p.read_byte(0xFF47));
     }
 }

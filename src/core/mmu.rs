@@ -4,7 +4,7 @@ use std::io::Read;
 use std::path::Path;
 
 use super::apu::Apu;
-use super::interrupt::InterruptKind;
+use super::interrupt::{self, InterruptKind};
 use super::joypad::Joypad;
 use super::mbc0::Mbc0;
 use super::memory::Memory;
@@ -69,6 +69,11 @@ impl Mmu {
         // Update Joypad
         if let Some(i) = self.timer.update(cycles) {
             self.request_interrupt(i);
+        }
+        if let Some(i) = self.vram.update(cycles) {
+            for interrupt in i {
+                self.request_interrupt(interrupt);
+            }
         }
     }
 
