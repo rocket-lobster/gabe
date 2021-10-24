@@ -4,7 +4,7 @@ use std::io::Read;
 use std::path::Path;
 
 use super::apu::Apu;
-use super::interrupt::{self, InterruptKind};
+use super::interrupt::InterruptKind;
 use super::joypad::Joypad;
 use super::mbc0::Mbc0;
 use super::memory::Memory;

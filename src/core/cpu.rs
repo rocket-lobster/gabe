@@ -514,7 +514,6 @@ impl Cpu {
         } else {
             // If we're halted, exit on an interrupt
             self.halted = false;
-            let mut cycles = 0;
             if !self.ime {
                 // No longer halted, exit if we cannot handle interrupts
                 None
@@ -528,7 +527,6 @@ impl Cpu {
                     // Run CALL on V-Blank procedure
                     self.stack_push(mmu, self.reg.pc);
                     self.reg.pc = 0x40;
-                    cycles = 16;
                 } else if (interrupt_result & InterruptKind::LcdStat as u8) != 0x0 {
                     // LCD STAT Interrupt
                     // Reset the request flag to the interrupt
@@ -538,7 +536,6 @@ impl Cpu {
                     // Run CALL on LCD Stat procedure
                     self.stack_push(mmu, self.reg.pc);
                     self.reg.pc = 0x48;
-                    cycles = 16;
                 } else if (interrupt_result & InterruptKind::Timer as u8) != 0x0 {
                     // Timer Interrupt
                     // Reset the request flag to the interrupt
@@ -548,7 +545,6 @@ impl Cpu {
                     // Run CALL on Timer procedure
                     self.stack_push(mmu, self.reg.pc);
                     self.reg.pc = 0x50;
-                    cycles = 16;
                 } else if (interrupt_result & InterruptKind::Serial as u8) != 0x0 {
                     // Serial Interrupt
                     // Reset the request flag to the interrupt
@@ -558,7 +554,6 @@ impl Cpu {
                     // Run CALL on Serial procedure
                     self.stack_push(mmu, self.reg.pc);
                     self.reg.pc = 0x58;
-                    cycles = 16;
                 } else if (interrupt_result & InterruptKind::Joypad as u8) != 0x0 {
                     // Joypad Interrupt
                     // Reset the request flag to the interrupt
@@ -568,10 +563,11 @@ impl Cpu {
                     // Run CALL on Joypad procedure
                     self.stack_push(mmu, self.reg.pc);
                     self.reg.pc = 0x60;
-                    cycles = 16;
                 }
+                // We're executing a interrupt procedure, disable all interrupts and 
+                // return cycles for a CALL procedure.
                 self.ime = false;
-                Some(cycles)
+                Some(16)
             }
         }
     }
@@ -593,6 +589,7 @@ impl Cpu {
             // Check if still halted after running interrupt checks
             return OPCODE_TABLE[0];
         }
+        
         let old_pc = self.reg.pc;
         let mut opcode = self.imm(mmu);
         let mut using_cb: bool = false;

@@ -363,11 +363,44 @@ impl Vram {
                     interrupts.push(InterruptKind::LcdStat);
                 }
                 // Compute and "render" the scanline into the LCD data
+                if self.lcdc.background_enable {
+                    self.draw_background();
+                }
+
+                if self.lcdc.obj_enable {
+                    self.draw_sprites();
+                }
             }
         }
 
-        if interrupts.len() > 0 {
+        if !interrupts.is_empty() {
             Some(interrupts)
+        } else {
+            None
+        }
+    }
+
+    /// Check internal state to determine what horizontal scanline background
+    /// pixels should be written to `screen_data`. Includes checking if rendering
+    /// window tiles in addition to background tiles. Only called during H-Blank,
+    /// and fills the scanline as provided by `ly`, assuming we're not in V-Blank
+    fn draw_background(&mut self) {
+
+    }
+
+    /// Called after `draw_background` fills scanline `ly` with data inside `screen_data`
+    /// with background and window tiles. Goes through OBJ memory to determine the 
+    /// sprites to be drawn over the background tiles, and writes them in the same
+    /// `ly` scanline within `screen_data`.
+    fn draw_sprites(&mut self) {
+
+    }
+
+    /// Request a frame to display from the LCD controller. Only returns screen data during 
+    /// V-Blank, otherwise returns None.
+    pub fn request_frame(&self) -> Option<[[[u8; 3]; 160]; 144]> {
+        if self.stat.mode_flag == LCDMode::Mode1 {
+            Some(self.screen_data)
         } else {
             None
         }
