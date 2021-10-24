@@ -8,11 +8,10 @@ mod core;
 mod debugger;
 
 use crate::core::gb::Gameboy;
-use crate::core::FrameData;
 use clap::{App, Arg};
 use debugger::{Debugger, DebuggerState};
 use ggez::conf::*;
-use ggez::graphics::{self, Color};
+use ggez::graphics::{self, Color, DrawParam, Image};
 use ggez::{event, event::EventHandler};
 use ggez::{Context, ContextBuilder, GameResult};
 use std::path::Path;
@@ -20,7 +19,7 @@ use std::path::Path;
 struct Emulator {
     gb: Gameboy,
     debugger: Debugger,
-    current_frame: FrameData
+    current_frame: Box<[u8]>
 }
 
 impl Emulator {
@@ -29,7 +28,7 @@ impl Emulator {
         Emulator {
             gb: Gameboy::power_on(path).expect("Path invalid"),
             debugger,
-            current_frame: [[[0x0; 3]; 160]; 144],
+            current_frame: vec![].into_boxed_slice(),
         }
     }
 }
@@ -60,6 +59,23 @@ impl EventHandler<ggez::GameError> for Emulator {
     }
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
         graphics::clear(ctx, Color::WHITE);
+        
+        // Convert GB frame from 3 values per-pixel into 4 values per-pixel to convert into Image
+        let mut image_vec: Vec<u8> = vec![];
+        let mut alpha_count = 0;
+        for i in self.current_frame.into_iter() {
+            image_vec.push(*i);
+            alpha_count += 1;
+            if alpha_count == 3 {
+                // Every 3rd value, push a dummy alpha channel value
+                image_vec.push(0);
+                alpha_count = 0;
+            } 
+        }
+        // There should be one additional element in the array
+        assert!(image_vec.len() == (self.current_frame.len() + (160 * 144)));
+        let image = Image::from_rgba8(ctx, 160, 144, image_vec.as_mut_slice())?;
+        graphics::draw(ctx, &image, DrawParam::default())?;
         graphics::present(ctx)
     }
 }

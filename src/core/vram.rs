@@ -216,7 +216,10 @@ impl Memory for PaletteData {
 }
 
 /// Type alias for the rendered screen data
-pub type FrameData = [[[u8; 3]; 160]; 144];
+pub type FrameData = Box<[u8]>;
+
+const SCREEN_WIDTH: usize = 160;
+const SCREEN_HEIGHT: usize = 144;
 
 pub struct Vram {
     /// 0xFF40: LCD Control
@@ -271,9 +274,9 @@ pub struct Vram {
     /// determines which Mode the LCD is in. Corresponds to CPU cycles passed in to MMU.
     scanline_cycles: usize,
 
-    /// Data containing the rendered scanlines. Each row (scanline) is rendered on H-Blank, and the 
-    /// full screen data can be provided during V-Blank, which is when all 144 lines have completed.
-    /// Each pixel is 3 RGB values
+    /// Data containing the rendered scanlines. Presented as row-major, meaning that
+    /// the first (top-left) pixel is represented by the first 3 values, the next pixel to the right is
+    /// represented by the next 3 values, and the next row doesn't begin until the SCREEN_WIDTH * 3 value.
     screen_data: FrameData,
 
     /// If true, a new frame has been completed for rendering. Can be requested from VRAM as long as 
@@ -297,7 +300,7 @@ impl Vram {
             obp1: PaletteData::init(),
             window_coords: (0x0, 0x0),
             scanline_cycles: 0,
-            screen_data: [[[0x0; 3]; 160]; 144],
+            screen_data: vec![0x0; 3 * SCREEN_WIDTH * SCREEN_HEIGHT].into_boxed_slice(),
             has_new_frame: false,
             memory: vec![0; 0x2000],
         }
@@ -418,7 +421,7 @@ impl Vram {
         if self.stat.mode_flag == LCDMode::Mode1 {
             // Frame has been requested, so frame is stale until another is rendered.
             self.has_new_frame = false;
-            Some(self.screen_data)
+            Some(self.screen_data.clone())
         } else {
             None
         }
