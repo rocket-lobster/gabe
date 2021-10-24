@@ -1,4 +1,8 @@
 pub mod gb;
+
+/// Type alias for the rendered screen data
+pub type FrameData = [[[u8; 3]; 160]; 144];
+
 mod apu;
 mod cpu;
 mod interrupt;

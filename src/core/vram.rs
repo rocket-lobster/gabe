@@ -215,6 +215,9 @@ impl Memory for PaletteData {
     }
 }
 
+/// Type alias for the rendered screen data
+pub type FrameData = [[[u8; 3]; 160]; 144];
+
 pub struct Vram {
     /// 0xFF40: LCD Control
     lcdc: Lcdc,
@@ -271,7 +274,11 @@ pub struct Vram {
     /// Data containing the rendered scanlines. Each row (scanline) is rendered on H-Blank, and the 
     /// full screen data can be provided during V-Blank, which is when all 144 lines have completed.
     /// Each pixel is 3 RGB values
-    screen_data: [[[u8; 3]; 160]; 144],
+    screen_data: FrameData,
+
+    /// If true, a new frame has been completed for rendering. Can be requested from VRAM as long as 
+    /// LCD is still within V-Blank
+    has_new_frame: bool,
 
     /// VRAM data
     memory: Vec<u8>,
@@ -291,6 +298,7 @@ impl Vram {
             window_coords: (0x0, 0x0),
             scanline_cycles: 0,
             screen_data: [[[0x0; 3]; 160]; 144],
+            has_new_frame: false,
             memory: vec![0; 0x2000],
         }
     }
@@ -334,6 +342,8 @@ impl Vram {
             if self.stat.mode_flag != LCDMode::Mode1 {
                 // If we are just entering V-Blank
                 self.stat.mode_flag = LCDMode::Mode1;
+                // New frame ready to be rendered
+                self.has_new_frame = true;
                 interrupts.push(InterruptKind::VBlank);
                 if self.stat.vblank_interrupt && !interrupts.contains(&InterruptKind::LcdStat) {
                     interrupts.push(InterruptKind::VBlank);
@@ -396,10 +406,18 @@ impl Vram {
 
     }
 
+    /// Returns if there's a new frame completed and ready to render. Call this before
+    /// calling `request_frame`, unless multiple copies of the same frame are needed.
+    pub fn new_frame_ready(&self) -> bool {
+        self.has_new_frame
+    }
+
     /// Request a frame to display from the LCD controller. Only returns screen data during 
     /// V-Blank, otherwise returns None.
-    pub fn request_frame(&self) -> Option<[[[u8; 3]; 160]; 144]> {
+    pub fn request_frame(&mut self) -> Option<FrameData> {
         if self.stat.mode_flag == LCDMode::Mode1 {
+            // Frame has been requested, so frame is stale until another is rendered.
+            self.has_new_frame = false;
             Some(self.screen_data)
         } else {
             None

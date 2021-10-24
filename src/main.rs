@@ -3,12 +3,12 @@ extern crate log;
 extern crate clap;
 extern crate env_logger;
 extern crate ggez;
-extern crate tui;
 
 mod core;
 mod debugger;
 
 use crate::core::gb::Gameboy;
+use crate::core::FrameData;
 use clap::{App, Arg};
 use debugger::{Debugger, DebuggerState};
 use ggez::conf::*;
@@ -20,6 +20,7 @@ use std::path::Path;
 struct Emulator {
     gb: Gameboy,
     debugger: Debugger,
+    current_frame: FrameData
 }
 
 impl Emulator {
@@ -28,6 +29,7 @@ impl Emulator {
         Emulator {
             gb: Gameboy::power_on(path).expect("Path invalid"),
             debugger,
+            current_frame: [[[0x0; 3]; 160]; 144],
         }
     }
 }
@@ -38,7 +40,11 @@ impl EventHandler<ggez::GameError> for Emulator {
             let state = self.gb.get_debug_state();
             let action = self.debugger.update(&state);
             match action {
-                DebuggerState::Next => self.gb.tick(),
+                DebuggerState::Next => {
+                    if let Some(f) = self.gb.tick() {
+                        self.current_frame = f;
+                    }
+                }
                 DebuggerState::Continue => self.debugger.suspend(),
                 DebuggerState::Quit => self.debugger.quit(),
                 _ => (),
@@ -46,7 +52,8 @@ impl EventHandler<ggez::GameError> for Emulator {
             Ok(())
         } else {
             while ggez::timer::check_update_time(ctx, 60) {
-                self.gb.step();
+                let frame = self.gb.step();
+                self.current_frame = frame;
             }
             Ok(())
         }
@@ -111,7 +118,7 @@ fn main() {
         )
         .arg(
             Arg::with_name("debug")
-                .help("Turns on the TUI debugger")
+                .help("Turns on the REPL debugger")
                 .short("d")
                 .long("debug"),
         )

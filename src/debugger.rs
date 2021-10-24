@@ -1,16 +1,11 @@
 use crate::core::gb::GbDebug;
-use crossterm::event;
-use tui::backend::CrosstermBackend;
-use tui::layout::{Alignment, Constraint, Direction, Layout};
-use tui::widgets::{Block, Borders, Paragraph, Text};
-use tui::Terminal;
 
 use std::io;
 use std::time::Duration;
 
 pub struct Debugger {
     enabled: bool,
-    tui: Option<Terminal<CrosstermBackend<io::Stdout>>>,
+    breakpoints: Vec<u16>,
 }
 
 pub enum DebuggerState {
@@ -26,18 +21,9 @@ pub enum DebuggerState {
 
 impl Debugger {
     pub fn new(enabled: bool) -> Self {
-        if enabled {
-            let stdout = io::stdout();
-            crossterm::terminal::enable_raw_mode().expect("Raw Mode Required");
-            let backend = CrosstermBackend::new(stdout);
-            let mut tui = Terminal::new(backend).unwrap();
-            tui.clear().unwrap();
-            Debugger {
-                enabled,
-                tui: Some(tui),
-            }
-        } else {
-            Debugger { enabled, tui: None }
+        Debugger {
+            enabled,
+            breakpoints: vec![],
         }
     }
 
@@ -54,43 +40,14 @@ impl Debugger {
     /// program lifetime
     pub fn quit(&mut self) {
         self.suspend();
-        self.tui.as_mut().unwrap().clear().unwrap();
-        self.tui = None;
+        self.breakpoints.clear();
     }
 
     pub fn update(&mut self, state: &GbDebug) -> DebuggerState {
         let mut ret = DebuggerState::Disabled;
-        if self.enabled {
-            self.tui
-                .as_mut()
-                .unwrap()
-                .draw(move |mut f| {
-                    let chunks = Layout::default()
-                        .direction(Direction::Horizontal)
-                        .constraints(
-                            [Constraint::Percentage(50), Constraint::Percentage(50)].as_ref(),
-                        )
-                        .split(f.size());
-
-                    let text = [Text::raw(format!("{}", state.cpu_data))];
-                    let paragraph = Paragraph::new(text.iter())
-                        .block(Block::default().title("CPU Data").borders(Borders::ALL))
-                        .alignment(Alignment::Left)
-                        .wrap(false);
-                    f.render_widget(paragraph, chunks[0]);
-                })
-                .unwrap();
-            if event::poll(Duration::from_millis(100)).unwrap() {
-                if let event::Event::Key(event) = event::read().unwrap() {
-                    match event.code {
-                        event::KeyCode::Char('n') => ret = DebuggerState::Next,
-                        event::KeyCode::Char('q') => ret = DebuggerState::Quit,
-                        event::KeyCode::Char('c') => ret = DebuggerState::Continue,
-                        _ => (),
-                    }
-                };
-            };
-        };
+        // if self.enabled {
+            
+        // };
         ret
     }
 }

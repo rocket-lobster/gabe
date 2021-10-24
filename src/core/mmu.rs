@@ -9,7 +9,7 @@ use super::joypad::Joypad;
 use super::mbc0::Mbc0;
 use super::memory::Memory;
 use super::timer::Timer;
-use super::vram::Vram;
+use super::vram::{Vram, FrameData};
 use super::wram::Wram;
 
 /// The state of all Gameboy memory, both internal memory and external cartridge memory
@@ -63,17 +63,29 @@ impl Mmu {
     /// run by the CPU, given by `cycles`. 
     /// Handles updates in response to Interrupts being returned by each 
     /// block, for the CPU to handle on the next fetch.
-    pub fn update(&mut self, cycles: usize) {
+    /// If a frame was completed during execution, return `FrameData` to caller, 
+    /// otherwise return `None`
+    pub fn update(&mut self, cycles: usize) -> Option<FrameData> {
         // Update APU
-        // Update VRAM
         // Update Joypad
+        
+        // Update Timers
         if let Some(i) = self.timer.update(cycles) {
             self.request_interrupt(i);
         }
+        // Update VRAM
         if let Some(i) = self.vram.update(cycles) {
             for interrupt in i {
                 self.request_interrupt(interrupt);
             }
+        }
+
+        // Check if we're ready to provide the next frame
+        // If so, pass along the frame data, otherwise return None
+        if self.vram.new_frame_ready() {
+            Some(self.vram.request_frame().unwrap())
+        } else {
+            None
         }
     }
 
