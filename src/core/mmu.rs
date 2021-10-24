@@ -8,6 +8,7 @@ use super::interrupt::InterruptKind;
 use super::joypad::Joypad;
 use super::mbc0::Mbc0;
 use super::memory::Memory;
+use super::serial::Serial;
 use super::timer::Timer;
 use super::vram::{Vram, FrameData};
 use super::wram::Wram;
@@ -24,6 +25,7 @@ pub struct Mmu {
     wram: Wram,
     timer: Timer,
     joypad: Joypad,
+    serial: Serial,
     oam: [u8; 0xA0],
     hram: [u8; 0x7F],
     intf: u8,
@@ -50,6 +52,7 @@ impl Mmu {
             wram: Wram::power_on(),
             timer: Timer::power_on(),
             joypad: Joypad::power_on(),
+            serial: Serial::power_on(),
             oam: [0; 0xA0],
             hram: [0; 0x7F],
             intf: 0,
@@ -113,6 +116,16 @@ impl Mmu {
         }
         
     }
+
+    fn unassigned_read(&self, addr: u16) -> u8 {
+        warn!("Memory Read at unassigned location {:4X}", addr);
+        0
+    }
+
+    fn unassigned_write(&mut self, addr: u16, val: u8) {
+        warn!("Memory Write at unassigned location {:4X} of value {:2X}", addr, val);
+        ()
+    }
 }
 
 impl Memory for Mmu {
@@ -124,13 +137,14 @@ impl Memory for Mmu {
             0xC000..=0xFDFF => self.wram.read_byte(addr),
             0xFE00..=0xFE9F => self.oam[(addr - 0xFE00) as usize],
             0xFF00 => self.joypad.read_byte(addr),
+            0xFF01..=0xFF02 => self.serial.read_byte(addr),
             0xFF04..=0xFF07 => self.timer.read_byte(addr),
             0xFF0F => self.intf,
             0xFF10..=0xFF2F => self.apu.read_byte(addr),
             0xFF40..=0xFF6F => self.vram.read_byte(addr),
             0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize],
             0xFFFF => self.ie as u8,
-            _ => unimplemented!(),
+            _ => self.unassigned_read(addr),
         }
     }
     fn write_byte(&mut self, addr: u16, val: u8) {
@@ -141,6 +155,7 @@ impl Memory for Mmu {
             0xC000..=0xFDFF => self.wram.write_byte(addr, val),
             0xFE00..=0xFE9F => self.oam[(addr - 0xFE00) as usize] = val,
             0xFF00 => self.joypad.write_byte(addr, val),
+            0xFF01..=0xFF02 => self.serial.write_byte(addr, val),
             0xFF04..=0xFF07 => self.timer.write_byte(addr, val),
             0xFF0F => self.intf = val,
             0xFF10..=0xFF2F => self.apu.write_byte(addr, val),
@@ -150,7 +165,7 @@ impl Memory for Mmu {
                 0 => self.ie = false,
                 _ => self.ie = true,
             },
-            _ => unimplemented!("Address: {:4X}", addr),
+            _ => self.unassigned_write(addr, val),
         };
     }
 }
