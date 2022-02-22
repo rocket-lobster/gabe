@@ -285,6 +285,9 @@ pub struct Vram {
 
     /// VRAM data
     memory: Vec<u8>,
+
+    /// OAM Data
+    oam: Vec<u8>,
 }
 
 impl Vram {
@@ -303,6 +306,7 @@ impl Vram {
             screen_data: vec![0x0; 3 * SCREEN_WIDTH * SCREEN_HEIGHT].into_boxed_slice(),
             has_new_frame: false,
             memory: vec![0; 0x2000],
+            oam: vec![0; 0xA0]
         }
     }
 
@@ -433,12 +437,16 @@ impl Memory for Vram {
         // TODO: Limit reads depending on Mode
         match addr {
             0x8000..=0x9FFF => self.memory[(addr - 0x8000) as usize],
+            0xFE00..=0xFE9F => self.oam[(addr - 0xFE00) as usize],
             0xFF40 => self.lcdc.read_byte(addr),
             0xFF41 => self.stat.read_byte(addr),
             0xFF42 => self.scroll_coords.1,
             0xFF43 => self.scroll_coords.0,
             0xFF44 => self.ly,
             0xFF45 => self.lyc,
+            0xFF47 => self.bgp.read_byte(addr),
+            0xFF48 => self.obp0.read_byte(addr),
+            0xFF49 => self.obp1.read_byte(addr),
             0xFF4A => self.window_coords.1,
             0xFF4B => self.window_coords.0,
             _ => panic!("Incorrect addressing in VRAM: {:X}", addr),
@@ -448,12 +456,16 @@ impl Memory for Vram {
         // TODO: Limit writes depending on Mode
         match addr {
             0x8000..=0x9FFF => self.memory[(addr - 0x8000) as usize] = val,
+            0xFE00..=0xFE9F => self.oam[(addr - 0xFE00) as usize] = val,
             0xFF40 => self.lcdc.write_byte(addr, val),
             0xFF41 => self.stat.write_byte(addr, val),
             0xFF42 => self.scroll_coords.1 = val,
             0xFF43 => self.scroll_coords.0 = val,
             0xFF44 => self.ly = 0x0,
             0xFF45 => self.lyc = val,
+            0xFF47 => self.bgp.write_byte(addr, val),
+            0xFF48 => self.obp0.write_byte(addr, val),
+            0xFF49 => self.obp1.write_byte(addr, val),
             0xFF4A => self.window_coords.1 = val,
             0xFF4B => self.window_coords.0 = val,
             _ => panic!("Incorrect addressing in VRAM: {:X}", addr),

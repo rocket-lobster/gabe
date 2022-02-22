@@ -770,6 +770,18 @@ impl Cpu {
                 self.reg.sp = v;
             }
 
+            // LD (a16),A
+            0xEA => {
+                let v = self.imm_word(mmu);
+                mmu.write_byte(v, self.reg.a);
+            }
+
+            // LD A,(a16)
+            0xFA => {
+                let v = self.imm_word(mmu);
+                self.reg.a = mmu.read_byte(v);
+            }
+
             // LD (a16),SP
             0x08 => {
                 let v = self.imm_word(mmu);

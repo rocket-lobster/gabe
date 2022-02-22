@@ -1,7 +1,7 @@
 use std::fs::File;
-use std::io;
 use std::io::Read;
 use std::path::Path;
+use std::{io, panic};
 
 use super::apu::Apu;
 use super::interrupt::InterruptKind;
@@ -10,8 +10,22 @@ use super::mbc0::Mbc0;
 use super::memory::Memory;
 use super::serial::Serial;
 use super::timer::Timer;
-use super::vram::{Vram, FrameData};
+use super::vram::{FrameData, Vram};
 use super::wram::Wram;
+
+/// The possible states of a DMA transfer running within the MMU. Until a write is performed
+/// at 0xFF46, the state will always be `Stopped`. Once a valid write at 0xFF46 occurs, the
+/// state is set to `Starting` to begin during the next MMU update at the provided u8 value.
+/// The value is the upper byte of the starting address, i.e. a value of 0x80 written will start
+/// the DMA at 0x8000 and stop at 0x809F.
+/// `Running` comes with a u16 value representing the current address the DMA is at. Multiple writes
+/// will be performed during an MMU update, so this tracks the value between `update` calls.
+#[derive(PartialEq)]
+enum DmaState {
+    Stopped,
+    Starting(u8),
+    Running(u16),
+}
 
 /// The state of all Gameboy memory, both internal memory and external cartridge memory
 ///
@@ -26,10 +40,10 @@ pub struct Mmu {
     timer: Timer,
     joypad: Joypad,
     serial: Serial,
-    oam: [u8; 0xA0],
     hram: [u8; 0x7F],
     intf: u8,
     ie: bool,
+    dma_state: DmaState,
 }
 
 impl Mmu {
@@ -53,25 +67,28 @@ impl Mmu {
             timer: Timer::power_on(),
             joypad: Joypad::power_on(),
             serial: Serial::power_on(),
-            oam: [0; 0xA0],
             hram: [0; 0x7F],
             intf: 0,
             ie: false,
+            dma_state: DmaState::Stopped,
         };
 
         Ok(mmu)
     }
 
     /// Updates all memory components to align with the number of cycles
-    /// run by the CPU, given by `cycles`. 
-    /// Handles updates in response to Interrupts being returned by each 
+    /// run by the CPU, given by `cycles`.
+    /// Handles updates in response to Interrupts being returned by each
     /// block, for the CPU to handle on the next fetch.
-    /// If a frame was completed during execution, return `FrameData` to caller, 
+    /// If a frame was completed during execution, return `FrameData` to caller,
     /// otherwise return `None`
     pub fn update(&mut self, cycles: usize) -> Option<FrameData> {
+        if self.dma_state != DmaState::Stopped {
+            self.dma_state = self.run_dma(cycles);
+        }
         // Update APU
         // Update Joypad
-        
+
         // Update Timers
         if let Some(i) = self.timer.update(cycles) {
             self.request_interrupt(i);
@@ -114,7 +131,55 @@ impl Mmu {
         } else {
             None
         }
-        
+    }
+
+    /// Run the DMA for the remaining
+    /// 671 cycles roughly needed for full DMA transfer.
+    /// It takes about 160 us for a full DMA, which is a little more than
+    /// 1 us per cycle. Doing 1-to-1 cycles into a write of data for simplicity
+    /// even though that will complete DMA a *bit* faster than hardware.
+    fn run_dma(&mut self, cycles: usize) -> DmaState {
+        match self.dma_state {
+            DmaState::Starting(s) => {
+                let addr = (s as u16) << 8;
+                for i in 0..cycles {
+                    let src_addr = addr + i as u16;
+                    let val = match src_addr {
+                        0x0000..=0x7F9F => self.cart.read_byte(src_addr),
+                        0x8000..=0x9F9F => self.vram.read_byte(src_addr),
+                        0xA000..=0xBF9F => self.cart.read_byte(src_addr),
+                        0xC000..=0xF19F => self.wram.read_byte(src_addr),
+                        _ => panic!("Invalid DMA read location {}", src_addr),
+                    };
+                    let oam_addr = 0xFE00 | (src_addr & 0xFF);
+                    self.vram.write_byte(oam_addr, val);
+                }
+                DmaState::Running(addr + cycles as u16)
+            }
+            DmaState::Running(a) => {
+                let addr = a;
+                for i in 0..cycles {
+                    let src_addr = addr + i as u16;
+                    if src_addr & 0xFF >= 0xA0 {
+                        // DMA complete, return Stopped
+                        trace!("DMA Transfer complete.");
+                        return DmaState::Stopped;
+                    } else {
+                        let val = match src_addr {
+                            0x0000..=0x7F9F => self.cart.read_byte(src_addr),
+                            0x8000..=0x9F9F => self.vram.read_byte(src_addr),
+                            0xA000..=0xBF9F => self.cart.read_byte(src_addr),
+                            0xC000..=0xF19F => self.wram.read_byte(src_addr),
+                            _ => panic!("Invalid DMA read location {}", src_addr),
+                        };
+                        let oam_addr = 0xFE00 | (src_addr & 0xFF);
+                        self.vram.write_byte(oam_addr, val);
+                    }
+                }
+                DmaState::Running(addr + cycles as u16)
+            }
+            DmaState::Stopped => DmaState::Stopped,
+        }
     }
 
     fn unassigned_read(&self, addr: u16) -> u8 {
@@ -123,50 +188,67 @@ impl Mmu {
     }
 
     fn unassigned_write(&mut self, addr: u16, val: u8) {
-        warn!("Memory Write at unassigned location {:4X} of value {:2X}", addr, val);
+        warn!(
+            "Memory Write at unassigned location {:4X} of value {:2X}",
+            addr, val
+        );
         ()
     }
 }
 
 impl Memory for Mmu {
     fn read_byte(&self, addr: u16) -> u8 {
-        match addr {
-            0x0000..=0x7FFF => self.cart.read_byte(addr),
-            0x8000..=0x9FFF => self.vram.read_byte(addr),
-            0xA000..=0xBFFF => self.cart.read_byte(addr),
-            0xC000..=0xFDFF => self.wram.read_byte(addr),
-            0xFE00..=0xFE9F => self.oam[(addr - 0xFE00) as usize],
-            0xFF00 => self.joypad.read_byte(addr),
-            0xFF01..=0xFF02 => self.serial.read_byte(addr),
-            0xFF04..=0xFF07 => self.timer.read_byte(addr),
-            0xFF0F => self.intf,
-            0xFF10..=0xFF2F => self.apu.read_byte(addr),
-            0xFF40..=0xFF6F => self.vram.read_byte(addr),
-            0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize],
-            0xFFFF => self.ie as u8,
-            _ => self.unassigned_read(addr),
+        if self.dma_state != DmaState::Stopped && (addr < 0xFF80 || addr > 0xFFFE) {
+            // CPU cannot access memory outside of HRAM. Return 0xFF
+            0xFF
+        } else {
+            match addr {
+                0x0000..=0x7FFF => self.cart.read_byte(addr),
+                0x8000..=0x9FFF => self.vram.read_byte(addr),
+                0xA000..=0xBFFF => self.cart.read_byte(addr),
+                0xC000..=0xFDFF => self.wram.read_byte(addr),
+                0xFE00..=0xFE9F => self.vram.read_byte(addr),
+                0xFF00 => self.joypad.read_byte(addr),
+                0xFF01..=0xFF02 => self.serial.read_byte(addr),
+                0xFF04..=0xFF07 => self.timer.read_byte(addr),
+                0xFF0F => self.intf,
+                0xFF10..=0xFF2F => self.apu.read_byte(addr),
+                0xFF46 => self.unassigned_read(addr),
+                0xFF40..=0xFF6F => self.vram.read_byte(addr),
+                0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize],
+                0xFFFF => self.ie as u8,
+                _ => self.unassigned_read(addr),
+            }
         }
     }
     fn write_byte(&mut self, addr: u16, val: u8) {
-        match addr {
-            0x0000..=0x7FFF => self.cart.write_byte(addr, val),
-            0x8000..=0x9FFF => self.vram.write_byte(addr, val),
-            0xA000..=0xBFFF => self.cart.write_byte(addr, val),
-            0xC000..=0xFDFF => self.wram.write_byte(addr, val),
-            0xFE00..=0xFE9F => self.oam[(addr - 0xFE00) as usize] = val,
-            0xFF00 => self.joypad.write_byte(addr, val),
-            0xFF01..=0xFF02 => self.serial.write_byte(addr, val),
-            0xFF04..=0xFF07 => self.timer.write_byte(addr, val),
-            0xFF0F => self.intf = val,
-            0xFF10..=0xFF2F => self.apu.write_byte(addr, val),
-            0xFF40..=0xFF6F => self.vram.write_byte(addr, val),
-            0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize] = val,
-            0xFFFF => match val {
-                0 => self.ie = false,
-                _ => self.ie = true,
-            },
-            _ => self.unassigned_write(addr, val),
-        };
+        if self.dma_state != DmaState::Stopped && (addr < 0xFF80 || addr > 0xFFFE) {
+            // CPU cannot access memory outside of HRAM. Do nothing
+        } else {
+            match addr {
+                0x0000..=0x7FFF => self.cart.write_byte(addr, val),
+                0x8000..=0x9FFF => self.vram.write_byte(addr, val),
+                0xA000..=0xBFFF => self.cart.write_byte(addr, val),
+                0xC000..=0xFDFF => self.wram.write_byte(addr, val),
+                0xFE00..=0xFE9F => self.vram.write_byte(addr, val),
+                0xFF00 => self.joypad.write_byte(addr, val),
+                0xFF01..=0xFF02 => self.serial.write_byte(addr, val),
+                0xFF04..=0xFF07 => self.timer.write_byte(addr, val),
+                0xFF0F => self.intf = val,
+                0xFF10..=0xFF2F => self.apu.write_byte(addr, val),
+                0xFF46 => {
+                    info!("Beginning DMA Transfer at {}00...", val);
+                    self.dma_state = DmaState::Starting(val);
+                }
+                0xFF40..=0xFF6F => self.vram.write_byte(addr, val),
+                0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize] = val,
+                0xFFFF => match val {
+                    0 => self.ie = false,
+                    _ => self.ie = true,
+                },
+                _ => self.unassigned_write(addr, val),
+            }
+        }
     }
 }
 
