@@ -564,7 +564,7 @@ impl Cpu {
                     self.stack_push(mmu, self.reg.pc);
                     self.reg.pc = 0x60;
                 }
-                // We're executing a interrupt procedure, disable all interrupts and 
+                // We're executing a interrupt procedure, disable all interrupts and
                 // return cycles for a CALL procedure.
                 self.ime = false;
                 Some(16)
@@ -576,7 +576,6 @@ impl Cpu {
     /// appropriate function, and executes the functionality.
     /// Returns the number of cycles executed.
     pub fn tick(&mut self, mmu: &mut mmu::Mmu) -> usize {
-
         if self.ime || self.halted {
             // If CPU is halted or IME is enabled, check if there's any interrupts to execute
             if let Some(c) = self.check_interrupts(mmu) {
@@ -589,7 +588,7 @@ impl Cpu {
             // Check if still halted after running interrupt checks
             return OPCODE_TABLE[0];
         }
-        
+
         let old_pc = self.reg.pc;
         let mut opcode = self.imm(mmu);
         let mut using_cb: bool = false;
@@ -926,6 +925,13 @@ impl Cpu {
             0xFE => {
                 let v = self.imm(mmu);
                 self.cp(v);
+            }
+
+            // CPL
+            0x2F => {
+                self.reg.a = self.reg.a ^ 0xFF;
+                self.reg.set_flag(Flag::N, true);
+                self.reg.set_flag(Flag::H, true);
             }
 
             // INC r8
