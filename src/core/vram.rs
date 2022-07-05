@@ -1,4 +1,4 @@
-use std::panic;
+use std::{panic, usize};
 
 use super::interrupt::InterruptKind;
 use super::memory::Memory;
@@ -198,20 +198,20 @@ impl Memory for PaletteData {
         assert!(addr == 0xFF47 || addr == 0xFF48 || addr == 0xFF49);
         let mut colors: Vec<GrayShades> = vec![];
         for i in 0..4 {
-            let v = (val >> (i *2)) & 0b11;
-            colors.push(match v { 
+            let v = (val >> (i * 2)) & 0b11;
+            colors.push(match v {
                 0 => GrayShades::White,
                 1 => GrayShades::LightGray,
                 2 => GrayShades::DarkGray,
                 3 => GrayShades::Black,
-                _ => panic!("Bad logic")
+                _ => panic!("Bad logic"),
             });
         }
         assert!(colors.len() == 4);
         self.color0 = colors[0];
         self.color1 = colors[1];
         self.color2 = colors[2];
-        self.color3 = colors[3]; 
+        self.color3 = colors[3];
     }
 }
 
@@ -279,7 +279,7 @@ pub struct Vram {
     /// represented by the next 3 values, and the next row doesn't begin until the SCREEN_WIDTH * 3 value.
     screen_data: FrameData,
 
-    /// If true, a new frame has been completed for rendering. Can be requested from VRAM as long as 
+    /// If true, a new frame has been completed for rendering. Can be requested from VRAM as long as
     /// LCD is still within V-Blank
     has_new_frame: bool,
 
@@ -306,7 +306,7 @@ impl Vram {
             screen_data: vec![0x0; 3 * SCREEN_WIDTH * SCREEN_HEIGHT].into_boxed_slice(),
             has_new_frame: false,
             memory: vec![0; 0x2000],
-            oam: vec![0; 0xA0]
+            oam: vec![0; 0xA0],
         }
     }
 
@@ -402,15 +402,87 @@ impl Vram {
     /// window tiles in addition to background tiles. Only called during H-Blank,
     /// and fills the scanline as provided by `ly`, assuming we're not in V-Blank
     fn draw_background(&mut self) {
+        // For each pixel in the current scanline given by LY
+        for p in 0..SCREEN_WIDTH {
+            // Get the coordinates for the tile map
+            let tile_x: u8 = self.scroll_coords.0.wrapping_add(p as u8) / 8;
+            let tile_y: u8 = self.scroll_coords.1.wrapping_add(self.ly) / 8;
 
+            // Get the pixel coordinates for the tile
+            let tile_pixel_x: u8 = self.scroll_coords.0.wrapping_add(p as u8) % 8;
+            let tile_pixel_y: u8 = self.scroll_coords.1.wrapping_add(self.ly) % 8;
+
+            // Get the tile map offset from what tile we are using
+            let mut tile_map_index: u16 = (tile_y as u16 * 32) + tile_x as u16;
+
+            // Add the relevant base address depending on which tile map is selected
+            // Tile Map 0: 0x9800 - 0x8000 = 0x1800
+            // Tile Map 1: 0x9C00 - 0x8000 = 0x1C00
+            if self.lcdc.background_tile_map_select {
+                tile_map_index = tile_map_index + 0x1C00;
+            } else {
+                tile_map_index = tile_map_index + 0x1800;
+            }
+
+            // Get the byte representing the tile data used at this location
+            let mut tile_data_base: u16 = self.memory[tile_map_index as usize] as u16;
+
+            // Add the relevant base address depending on which tile data is selected
+            if self.lcdc.tile_data_select {
+                // The Tile Data index is a signed byte value when using Tile Table 1, reinterpret as an i8.
+                let tile_data_signed = i8::from_le_bytes([tile_data_base as u8]);
+                // Each Tile Data Table entry is 16 bytes, then offset by signed index.
+                // Value of 0 is at 0x1000 into the VRAM, then subtracted or added to by the signed index
+                tile_data_base = ((tile_data_signed * 16) as i16 + 0x1000) as u16;
+            } else {
+                // Each Tile Data Table entry is 16 bytes, starting at 0x0000
+                tile_data_base = tile_data_base * 16;
+            }
+
+            // Each set of 2 bytes represets the least and most signficant bits in the tile's color number, respectively,
+            // for each line of 8 pixels in the tile.
+            // Byte 0-1 is first line, Byte 2-3 is second line, etc.
+            // Offset the line we're looking for by applying the tile pixel y-offset, and grab both color bytes
+            let tile_colors_lsb =
+                self.memory[(tile_data_base + (tile_pixel_y as u16 * 2)) as usize];
+            let tile_colors_msb =
+                self.memory[(tile_data_base + (tile_pixel_y as u16 * 2) + 1) as usize];
+
+            let pixel_shift = tile_pixel_x ^ 0x7;
+            let tile_color_number = (((tile_colors_msb >> pixel_shift) & 0x1) << 1)
+                | ((tile_colors_lsb >> pixel_shift) & 0x1);
+
+            let pixel_shade = match tile_color_number {
+                0 => self.bgp.color0,
+                1 => self.bgp.color1,
+                2 => self.bgp.color2,
+                3 => self.bgp.color3,
+                _ => panic!("Incorrect color number selection logic."),
+            };
+
+            let pixel_rgb = Self::shade_to_rgb_u8(&pixel_shade);
+
+            self.screen_data[((self.ly as usize * (SCREEN_WIDTH * 3)) + (p * 3))] = pixel_rgb.0;
+            self.screen_data[((self.ly as usize * (SCREEN_WIDTH * 3)) + (p * 3) + 1)] = pixel_rgb.1;
+            self.screen_data[((self.ly as usize * (SCREEN_WIDTH * 3)) + (p * 3) + 2)] = pixel_rgb.2;
+        }
     }
 
     /// Called after `draw_background` fills scanline `ly` with data inside `screen_data`
-    /// with background and window tiles. Goes through OBJ memory to determine the 
+    /// with background and window tiles. Goes through OBJ memory to determine the
     /// sprites to be drawn over the background tiles, and writes them in the same
     /// `ly` scanline within `screen_data`.
-    fn draw_sprites(&mut self) {
+    fn draw_sprites(&mut self) {}
 
+    /// Converts the given GrayShade enum value into a tuple of
+    /// u8 values representing the RGB of the shade
+    fn shade_to_rgb_u8(shade: &GrayShades) -> (u8, u8, u8) {
+        match shade {
+            GrayShades::Black => (0, 0, 0),
+            GrayShades::DarkGray => (85, 85, 85),
+            GrayShades::LightGray => (170, 170, 170),
+            GrayShades::White => (255, 255, 255),
+        }
     }
 
     /// Returns if there's a new frame completed and ready to render. Call this before
@@ -419,7 +491,7 @@ impl Vram {
         self.has_new_frame
     }
 
-    /// Request a frame to display from the LCD controller. Only returns screen data during 
+    /// Request a frame to display from the LCD controller. Only returns screen data during
     /// V-Blank, otherwise returns None.
     pub fn request_frame(&mut self) -> Option<FrameData> {
         if self.stat.mode_flag == LCDMode::Mode1 {
