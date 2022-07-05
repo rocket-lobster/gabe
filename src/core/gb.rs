@@ -20,7 +20,7 @@ impl Gameboy {
     pub fn power_on(path: impl AsRef<Path>) -> io::Result<Self> {
         Ok(Gameboy {
             cpu: cpu::Cpu::power_on(),
-            mmu: mmu::Mmu::power_on(path)?
+            mmu: mmu::Mmu::power_on(path)?,
         })
     }
 
@@ -32,10 +32,9 @@ impl Gameboy {
                 return i;
             }
         }
-        
     }
 
-    /// Executes one CPU instruction and updates the other 
+    /// Executes one CPU instruction and updates the other
     /// subsystems with the appropriate number of cycles
     /// Returns a frame if completed during the tick.
     pub fn tick(&mut self) -> Option<FrameData> {
@@ -45,9 +44,9 @@ impl Gameboy {
         self.mmu.update(cycles)
     }
 
-    pub fn get_debug_state(&mut self) -> GbDebug {
+    pub fn get_debug_state(&self) -> GbDebug {
         GbDebug {
-            cpu_data: self.cpu.get_debug_data()
+            cpu_data: self.cpu.get_debug_data(),
         }
     }
 }

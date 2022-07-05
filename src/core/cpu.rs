@@ -30,7 +30,7 @@ enum Flag {
 /// - PC (Program Counter)
 /// - SP (Stack Pointer)
 #[derive(Clone, Default)]
-struct Registers {
+pub struct Registers {
     pub a: u8,
     pub f: u8,
     pub b: u8,
@@ -443,9 +443,9 @@ const OPCODE_STRINGS: [&str; 256] = [
 /// the Registers and MMU when appropriate.
 #[derive(Clone)]
 pub struct Cpu {
-    reg: Registers,
-    ime: bool,
-    halted: bool,
+    pub reg: Registers,
+    pub ime: bool,
+    pub halted: bool,
 }
 
 impl fmt::Display for Cpu {
@@ -499,7 +499,7 @@ impl Cpu {
         }
     }
 
-    pub fn get_debug_data(&mut self) -> Cpu {
+    pub fn get_debug_data(&self) -> Cpu {
         self.clone()
     }
 

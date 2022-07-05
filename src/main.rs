@@ -19,7 +19,7 @@ use std::path::Path;
 struct Emulator {
     gb: Gameboy,
     debugger: Debugger,
-    current_frame: Box<[u8]>
+    current_frame: Box<[u8]>,
 }
 
 impl Emulator {
@@ -28,7 +28,7 @@ impl Emulator {
         Emulator {
             gb: Gameboy::power_on(path).expect("Path invalid"),
             debugger,
-            current_frame: vec![].into_boxed_slice(),
+            current_frame: vec![0; 160 * 144 * 3].into_boxed_slice(),
         }
     }
 }
@@ -36,17 +36,14 @@ impl Emulator {
 impl EventHandler<ggez::GameError> for Emulator {
     fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
         if self.debugger.is_running() {
-            let state = self.gb.get_debug_state();
-            let action = self.debugger.update(&state);
+            let action = self.debugger.update(&self.gb);
             match action {
-                DebuggerState::Next => {
+                DebuggerState::Running => {
                     if let Some(f) = self.gb.tick() {
                         self.current_frame = f;
                     }
                 }
-                DebuggerState::Continue => self.debugger.suspend(),
-                DebuggerState::Quit => self.debugger.quit(),
-                _ => (),
+                DebuggerState::Stopping => self.debugger.quit(),
             };
             Ok(())
         } else {
@@ -59,7 +56,7 @@ impl EventHandler<ggez::GameError> for Emulator {
     }
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
         graphics::clear(ctx, Color::WHITE);
-        
+
         // Convert GB frame from 3 values per-pixel into 4 values per-pixel to convert into Image
         let mut image_vec: Vec<u8> = vec![];
         let mut alpha_count = 0;
@@ -70,7 +67,7 @@ impl EventHandler<ggez::GameError> for Emulator {
                 // Every 3rd value, push a dummy alpha channel value
                 image_vec.push(0);
                 alpha_count = 0;
-            } 
+            }
         }
         // There should be one additional element in the array
         assert!(image_vec.len() == (self.current_frame.len() + (160 * 144)));
