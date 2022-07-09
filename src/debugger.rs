@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use crate::core::gb::{Gameboy, GbDebug};
+use crate::core::gb::Gameboy;
 
 pub struct Debugger {
     enabled: bool,
@@ -87,7 +87,7 @@ impl Debugger {
     }
 
     fn get_command(&mut self) -> DebugCommand {
-        let mut ret: DebugCommand;
+        let ret: DebugCommand;
         loop {
             print!("gabe> ");
             std::io::stdout().flush().unwrap();
@@ -154,8 +154,8 @@ impl Debugger {
                         match c2 {
                             Some("list") => DebugCommand::BreakpointList,
                             Some("add") => {
-                                if c3.is_some() {
-                                    if let Ok(addr) = u16::from_str_radix(c3.unwrap(), 16) {
+                                if let Some(c3) = c3 {
+                                    if let Ok(addr) = u16::from_str_radix(c3, 16) {
                                         DebugCommand::BreakpointAdd(addr)
                                     } else {
                                         DebugCommand::Error("Unable to parse address.".to_string())
@@ -165,8 +165,8 @@ impl Debugger {
                                 }
                             }
                             Some("delete") => {
-                                if c3.is_some() {
-                                    if let Ok(addr) = u16::from_str_radix(c3.unwrap(), 16) {
+                                if let Some(c3) = c3 {
+                                    if let Ok(addr) = u16::from_str_radix(c3, 16) {
                                         DebugCommand::BreakpointDelete(addr)
                                     } else {
                                         DebugCommand::Error("Unable to parse address.".to_string())
@@ -183,7 +183,7 @@ impl Debugger {
                     "step" => {
                         if let Some(c2) = iter.next() {
                             // Provided number of steps
-                            if let Ok(num) = usize::from_str_radix(c2, 10) {
+                            if let Ok(num) = c2.parse::<usize>() {
                                 DebugCommand::Step(num)
                             } else {
                                 DebugCommand::Error("Unable to parse step count.".to_string())
