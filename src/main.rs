@@ -16,6 +16,7 @@ struct Emulator {
     gb: Gameboy,
     debugger: Debugger,
     current_frame: Box<[u8]>,
+    has_new_frame: bool,
 }
 
 impl Emulator {
@@ -25,6 +26,7 @@ impl Emulator {
             gb: Gameboy::power_on(path).expect("Path invalid"),
             debugger,
             current_frame: vec![0; 160 * 144 * 3].into_boxed_slice(),
+            has_new_frame: false,
         }
     }
 }
@@ -105,27 +107,39 @@ fn main() {
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         if emu.debugger.is_running() {
+            // Remove frame limiting while debugging
+            window.limit_update_rate(None);
             let action = emu.debugger.update(&emu.gb);
             match action {
                 DebuggerState::Running => {
                     if let Some(f) = emu.gb.tick() {
                         emu.current_frame = f;
+                        emu.has_new_frame = true;
                     }
                 }
-                DebuggerState::Stopping => emu.debugger.quit(),
+                DebuggerState::Stopping => {
+                    emu.debugger.quit();
+                    window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
+                }
             }
         } else {
             let frame = emu.gb.step();
             emu.current_frame = frame;
+            emu.has_new_frame = true;
         }
 
-        // Convert the series of u8s into a series of RGB-encoded u32s
-        let iter = emu.current_frame.chunks(3);
-        let mut image_buffer: Vec<u32> = vec![];
-        for chunk in iter {
-            let new_val = from_u8_rgb(chunk[0], chunk[1], chunk[2]);
-            image_buffer.push(new_val);
+        if emu.has_new_frame {
+            // Convert the series of u8s into a series of RGB-encoded u32s
+            let iter = emu.current_frame.chunks(3);
+            let mut image_buffer: Vec<u32> = vec![];
+            for chunk in iter {
+                let new_val = from_u8_rgb(chunk[0], chunk[1], chunk[2]);
+                image_buffer.push(new_val);
+            }
+            window.update_with_buffer(&image_buffer, 160, 144).unwrap();
+        } else {
+            // No new buffer, just update input
+            window.update();
         }
-        window.update_with_buffer(&image_buffer, 160, 144).unwrap();
     }
 }
