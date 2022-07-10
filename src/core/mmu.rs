@@ -121,16 +121,12 @@ impl Mmu {
     /// Debug function. Returns a simple Vec of the requested range of data. Only returns
     /// data visible to MMU, so any non-selected banks or block-internal data not memory-mapped
     /// will not be returned.
-    pub fn get_memory_range(&self, start: u16, end: u16) -> Option<Vec<u8>> {
-        if start <= end {
+    pub fn get_memory_range(&self, range: std::ops::Range<u16>) -> Vec<u8> {
             let mut vec: Vec<u8> = Vec::new();
-            for addr in start..=end {
+            for addr in range.into_iter() {
                 vec.push(self.read_byte(addr));
             }
-            Some(vec)
-        } else {
-            None
-        }
+            vec 
     }
 
     /// Run the DMA for the remaining
@@ -254,7 +250,6 @@ impl Memory for Mmu {
 
 #[cfg(test)]
 mod mmu_tests {
-    use super::*;
     #[test]
     fn interrupt_requests() {}
 }

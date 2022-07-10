@@ -1,4 +1,5 @@
 pub mod gb;
+pub mod disassemble;
 mod apu;
 mod cpu;
 mod interrupt;

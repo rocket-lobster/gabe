@@ -1,6 +1,9 @@
-use std::io::Write;
+use std::{
+    io::Write,
+    ops::Range,
+};
 
-use crate::core::gb::Gameboy;
+use crate::core::{disassemble, gb::Gameboy};
 
 pub struct Debugger {
     enabled: bool,
@@ -21,7 +24,9 @@ enum DebugCommand {
     BreakpointList,
     Step(usize),
     Continue,
-    Evaluate,
+    Print(String),
+    Dump(Range<u16>),
+    Disassemble(usize),
     Help,
     Quit,
     Nothing,
@@ -50,30 +55,81 @@ impl Debugger {
 
     pub fn update(&mut self, state: &Gameboy) -> DebuggerState {
         let mut ret = DebuggerState::Running;
-        let debug_state = state.get_debug_state();
-
+        let pc = state.get_pc();
         // Check if we're at a breakpoint
-        if self.breakpoints.contains(&debug_state.cpu_data.reg.pc) {
+        if self.breakpoints.contains(&pc) {
             // Stop execution and get next command
-            println!(
-                "Stopping execution at breakpoint: {}",
-                &debug_state.cpu_data.reg.pc
-            );
+            println!("Stopping execution at breakpoint: {:04X}", &pc);
             self.current_command = self.get_command();
         }
 
         loop {
-            match self.current_command {
+            match &self.current_command {
+                DebugCommand::Disassemble(n) => {
+                    let mem = state.get_memory_range(pc..pc + (*n as u16));
+                    let disasm = disassemble::disassemble_block(mem);
+                    for s in disasm {
+                        println!("{}", s);
+                    }
+                }
                 DebugCommand::Step(n) => {
-                    if n == 0 {
+                    if *n == 0 {
                         println!("Completed steps.");
+                        let cpu_state = state.get_debug_state().cpu_data;
+                        println!("{}", cpu_state);
+                        // Grab max number of bytes needed for any instruction
+                        let mem = state.get_memory_range(pc..pc + 3);
+                        let disasm = disassemble::disassemble_block(mem);
+                        println!("0x{:04X}: {}", pc, disasm[0]);
                     } else {
                         self.current_command = DebugCommand::Step(n - 1);
                         break;
                     }
                 }
                 DebugCommand::Continue => break,
-                DebugCommand::Evaluate => todo!(),
+                DebugCommand::Print(s) => {
+                    let target = s.clone();
+                    let mut iter = target.split_terminator('.');
+                    if let Some(c1) = iter.next() {
+                        match c1 {
+                            "cpu" => {
+                                let cpu_state = state.get_debug_state().cpu_data;
+                                println!("{}", cpu_state);
+                            }
+                            _ => println!("Cannot resolve target \"{}\"", c1),
+                        }
+                    }
+                }
+                DebugCommand::Dump(r) => {
+                    let new_start: u16 = if r.start % 16 != 0 {
+                        // We start in the middle of the line, find nearest line start
+                        let pad = r.start % 16;
+                        r.start - pad
+                    } else {
+                        r.start
+                    };
+
+                    let new_end: u16 = if r.end % 16 != 0 {
+                        // We end in the middle of the line, fill remaining line
+                        let pad = 16 - (r.end % 16);
+                        r.end + pad
+                    } else {
+                        r.end
+                    };
+                    let vals = state.get_memory_range(std::ops::Range {
+                        start: new_start,
+                        end: new_end,
+                    });
+                    let mut current_line = new_start;
+                    for v in vals.chunks(16) {
+                        print!("0x{:04X}: ", current_line);
+                        for x in v.iter() {
+                            print!("{:02X} ", x);
+                        }
+                        println!();
+                        current_line += 16;
+                    }
+                }
                 DebugCommand::Quit => {
                     ret = DebuggerState::Stopping;
                     break;
@@ -114,6 +170,10 @@ impl Debugger {
                     s
                 ),
                 DebugCommand::Nothing => (),
+                DebugCommand::Disassemble(s) => {
+                    ret = DebugCommand::Disassemble(s);
+                    break;
+                }
                 // Remaining commands pass back to caller
                 DebugCommand::Step(s) => {
                     ret = DebugCommand::Step(s);
@@ -123,8 +183,12 @@ impl Debugger {
                     ret = DebugCommand::Continue;
                     break;
                 }
-                DebugCommand::Evaluate => {
-                    ret = DebugCommand::Evaluate;
+                DebugCommand::Print(s) => {
+                    ret = DebugCommand::Print(s);
+                    break;
+                }
+                DebugCommand::Dump(r) => {
+                    ret = DebugCommand::Dump(r);
                     break;
                 }
                 DebugCommand::Quit => {
@@ -180,6 +244,20 @@ impl Debugger {
                             }
                         }
                     }
+                    "disassemble" | "disasm" => {
+                        if let Some(c2) = iter.next() {
+                            // Provided number of steps
+                            if let Ok(num) = c2.parse::<usize>() {
+                                DebugCommand::Disassemble(num)
+                            } else {
+                                DebugCommand::Error(
+                                    "Unable to parse disassemble count.".to_string(),
+                                )
+                            }
+                        } else {
+                            DebugCommand::Disassemble(1)
+                        }
+                    }
                     "step" => {
                         if let Some(c2) = iter.next() {
                             // Provided number of steps
@@ -193,8 +271,37 @@ impl Debugger {
                         }
                     }
                     "s" => DebugCommand::Step(1),
-                    "continue" => DebugCommand::Continue,
-                    "c" => DebugCommand::Continue,
+                    "print" | "p" => {
+                        if let Some(c2) = iter.next() {
+                            DebugCommand::Print(c2.to_string())
+                        } else {
+                            DebugCommand::Error("No print target provided.".to_string())
+                        }
+                    }
+                    "dump" | "d" => {
+                        if let Some(c2) = iter.next() {
+                            if let Ok(start) = u16::from_str_radix(c2, 16) {
+                                if let Some(c3) = iter.next() {
+                                    if let Ok(end) = u16::from_str_radix(c3, 16) {
+                                        DebugCommand::Dump(start..end)
+                                    } else {
+                                        DebugCommand::Error(
+                                            "Unable to parse address end.".to_string(),
+                                        )
+                                    }
+                                } else {
+                                    // Just print 10 lines
+                                    let end = start + (16 * 10);
+                                    DebugCommand::Dump(start..end)
+                                }
+                            } else {
+                                DebugCommand::Error("Unable to parse address start.".to_string())
+                            }
+                        } else {
+                            DebugCommand::Error("No address provided.".to_string())
+                        }
+                    }
+                    "continue" | "c" => DebugCommand::Continue,
                     "help" => DebugCommand::Help,
                     "h" => DebugCommand::Help,
                     "quit" => DebugCommand::Quit,
@@ -214,6 +321,8 @@ impl Debugger {
         println!("\tbreak list: Lists all currently tracked breakpoints.");
         println!("\tstep (number): Executes the given number of CPU instructions. If number isn't given, executes once.");
         println!("\tcontinue: Runs the emulator until reaching a breakpoint.");
+        println!("\tprint [target]: Prints the state of the given target. Target should be blocks separated by periods, e.g. getting the CPU PC would be \"cpu.pc\"");
+        println!("\tdump [addr1] (addr2): Prints the memory value at each address \'a\' given by the range addr1 <= a < addr2. If the end of the range isn't provided, it will print 10 lines.");
         println!("\tquit: Shuts down the debugger and falls into normal code execution for the rest of the emulator run.");
         println!("\thelp: Displays this help text.");
     }

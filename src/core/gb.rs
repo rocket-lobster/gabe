@@ -49,4 +49,15 @@ impl Gameboy {
             cpu_data: self.cpu.get_debug_data(),
         }
     }
+
+    /// Returns the current program counter of the CPU
+    pub fn get_pc(&self) -> u16 {
+        self.cpu.reg.pc
+    }
+
+    /// Returns a boxed slice of u8 values contained within the given range of u16 values.
+    /// Only returns values as read via the CPU, so forbidden or fixed reads will not be bypassed
+    pub fn get_memory_range(&self, range: std::ops::Range<u16>) -> Box<[u8]> {
+        self.mmu.get_memory_range(range).into_boxed_slice()
+    }
 }
