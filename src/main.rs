@@ -6,7 +6,7 @@ mod debugger;
 
 use crate::core::gb::Gameboy;
 
-use std::path::Path;
+use std::{path::Path, io::{Read, Write}, fs::File};
 
 use clap::{App, Arg};
 use debugger::{Debugger, DebuggerState};
@@ -66,9 +66,22 @@ fn main() {
                 .short("d")
                 .long("debug"),
         )
+        .arg(
+            Arg::with_name("disassemble")
+                .help("Creates a disassembly output file from the given ROM instead of running.")
+                .long("disassemble")
+        )
         .get_matches();
     let rom_file = matches.value_of("ROM").unwrap();
     let debug_enabled = matches.is_present("debug");
+    let do_disassemble = matches.is_present("disassemble");
+
+    if do_disassemble {
+        println!("Generating disassembled file from {}", rom_file);
+        disassemble_to_file(rom_file).expect("Error with I/O, exiting...");
+        println!("Diassembly of {} completed successfully! Exiting.", rom_file);
+        return;
+    }
 
     let mut emu = Emulator::power_on(rom_file, debug_enabled);
 
@@ -146,3 +159,16 @@ fn main() {
         }
     }
 }
+
+
+fn disassemble_to_file(path: impl AsRef<Path>) -> Result<(), std::io::Error> {
+    let mut in_file = File::open(path.as_ref())?;
+    let mut out_file = File::create("output.asm")?;
+    let mut rom_data = Vec::new();
+    in_file.read_to_end(&mut rom_data)?;
+    let disasm = core::disassemble::disassemble_block(rom_data.into_boxed_slice(), 0);
+    for (p, s) in disasm {
+        out_file.write_all(format!("0x{:04X}: {}\n", p, s).as_bytes())?;
+    }
+    Ok(())
+} 
