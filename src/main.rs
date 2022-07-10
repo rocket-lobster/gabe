@@ -16,7 +16,6 @@ struct Emulator {
     gb: Gameboy,
     debugger: Debugger,
     current_frame: Box<[u8]>,
-    has_new_frame: bool,
 }
 
 impl Emulator {
@@ -26,7 +25,6 @@ impl Emulator {
             gb: Gameboy::power_on(path).expect("Path invalid"),
             debugger,
             current_frame: vec![0; 160 * 144 * 3].into_boxed_slice(),
-            has_new_frame: false,
         }
     }
 }
@@ -78,57 +76,59 @@ fn main() {
         "Gabe Emulator",
         160,
         144,
-        WindowOptions { 
-            resize: true, 
+        WindowOptions {
+            resize: true,
             scale_mode: ScaleMode::AspectRatioStretch,
             ..WindowOptions::default()
         },
-    ).expect("Failed to open window.");
+    )
+    .expect("Failed to open window.");
 
-    window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
+    if debug_enabled {
+        // No frame limiting while debugging
+        window.limit_update_rate(None);
+    } else {
+        // 60 fps framelimit
+        window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
+    }
 
     let mut color: u8 = 255;
 
     // Dummy buffer for testing
-    let dummy_buffer: Vec<u8> = (0..69120).map(move |v| {
-        if v % 3 == 0 {
-            color = match color {
-                0 => 85,
-                85 => 170,
-                170 => 255,
-                255 => 0,
-                _ => panic!()
-            };
-        }
-        color
-    }).collect();
+    let dummy_buffer: Vec<u8> = (0..69120)
+        .map(move |v| {
+            if v % 3 == 0 {
+                color = match color {
+                    0 => 85,
+                    85 => 170,
+                    170 => 255,
+                    255 => 0,
+                    _ => panic!(),
+                };
+            }
+            color
+        })
+        .collect();
 
     let _dummy_buffer = dummy_buffer.into_boxed_slice();
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         if emu.debugger.is_running() {
-            // Remove frame limiting while debugging
-            window.limit_update_rate(None);
             let action = emu.debugger.update(&emu.gb);
             match action {
                 DebuggerState::Running => {
-                    if let Some(f) = emu.gb.tick() {
-                        emu.current_frame = f;
-                        emu.has_new_frame = true;
-                    }
+                    // Ignore frames
+                    emu.gb.tick();
                 }
                 DebuggerState::Stopping => {
                     emu.debugger.quit();
                     window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
                 }
             }
+            window.update();
         } else {
             let frame = emu.gb.step();
             emu.current_frame = frame;
-            emu.has_new_frame = true;
-        }
-
-        if emu.has_new_frame {
             // Convert the series of u8s into a series of RGB-encoded u32s
             let iter = emu.current_frame.chunks(3);
             let mut image_buffer: Vec<u32> = vec![];
@@ -136,10 +136,13 @@ fn main() {
                 let new_val = from_u8_rgb(chunk[0], chunk[1], chunk[2]);
                 image_buffer.push(new_val);
             }
+            let keys = window.get_keys();
+            if keys.contains(&Key::LeftCtrl) && keys.contains(&Key::D) && debug_enabled {
+                // Fall back into debug mode on next update
+                println!("Received debug command, enabling debugger...");
+                emu.debugger.start();
+            }
             window.update_with_buffer(&image_buffer, 160, 144).unwrap();
-        } else {
-            // No new buffer, just update input
-            window.update();
         }
     }
 }

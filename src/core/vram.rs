@@ -521,7 +521,10 @@ impl Memory for Vram {
             0xFF49 => self.obp1.read_byte(addr),
             0xFF4A => self.window_coords.1,
             0xFF4B => self.window_coords.0,
-            _ => panic!("Incorrect addressing in VRAM: {:X}", addr),
+            _ => {
+                debug!("Unassigned read in VRAM: {:X}", addr);
+                0
+            }
         }
     }
     fn write_byte(&mut self, addr: u16, val: u8) {
@@ -540,7 +543,10 @@ impl Memory for Vram {
             0xFF49 => self.obp1.write_byte(addr, val),
             0xFF4A => self.window_coords.1 = val,
             0xFF4B => self.window_coords.0 = val,
-            _ => panic!("Incorrect addressing in VRAM: {:X}", addr),
+            _ => {
+                debug!("Unassigned write in VRAM: {:X}", addr);
+                ()
+            }
         }
     }
 }

@@ -308,9 +308,9 @@ impl Cpu {
                     self.reg.pc = 0x60;
                 }
                 // We're executing a interrupt procedure, disable all interrupts and
-                // return cycles for a CALL procedure.
+                // return cycles matching an interrupt service
                 self.ime = false;
-                Some(16)
+                Some(20)
             }
         }
     }
@@ -353,6 +353,12 @@ impl Cpu {
 
             // STOP
             0x10 => unimplemented!("STOP not implemented"),
+
+            // CCF
+            0x3F => self.reg.set_flag(Flag::C, !self.reg.get_flag(Flag::C)),
+
+            // SCF
+            0x37 => self.reg.set_flag(Flag::C, true),
 
             // IME
             0xF3 => self.ime = false,

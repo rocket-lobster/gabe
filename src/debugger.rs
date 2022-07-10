@@ -1,7 +1,4 @@
-use std::{
-    io::Write,
-    ops::Range,
-};
+use std::{io::Write, ops::Range};
 
 use crate::core::{disassemble, gb::Gameboy};
 
@@ -46,8 +43,13 @@ impl Debugger {
         self.enabled
     }
 
-    /// Stops the debugger and stops the TUI for the remaining
-    /// program lifetime
+    /// Start the debugger
+    pub fn start(&mut self) {
+        self.enabled = true;
+        self.current_command = DebugCommand::Nothing;
+    }
+
+    /// Stops the debugger until commanded back on
     pub fn quit(&mut self) {
         self.enabled = false;
         self.breakpoints.clear();
@@ -67,9 +69,9 @@ impl Debugger {
             match &self.current_command {
                 DebugCommand::Disassemble(n) => {
                     let mem = state.get_memory_range(pc..pc + (*n as u16));
-                    let disasm = disassemble::disassemble_block(mem);
-                    for s in disasm {
-                        println!("{}", s);
+                    let disasm = disassemble::disassemble_block(mem, pc);
+                    for (p, s) in disasm {
+                        println!("0x{:04X}: {}", p, s);
                     }
                 }
                 DebugCommand::Step(n) => {
@@ -79,8 +81,8 @@ impl Debugger {
                         println!("{}", cpu_state);
                         // Grab max number of bytes needed for any instruction
                         let mem = state.get_memory_range(pc..pc + 3);
-                        let disasm = disassemble::disassemble_block(mem);
-                        println!("0x{:04X}: {}", pc, disasm[0]);
+                        let disasm = disassemble::disassemble_block(mem, pc);
+                        println!("0x{:04X}: {}", disasm[0].0, disasm[0].1);
                     } else {
                         self.current_command = DebugCommand::Step(n - 1);
                         break;
