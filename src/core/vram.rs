@@ -124,7 +124,7 @@ impl Stat {
             vblank_interrupt: false,
             hblank_interrupt: false,
             lyc_ly_flag: false,
-            mode_flag: LCDMode::Mode2,
+            mode_flag: LCDMode::Mode1,
         }
     }
 }
@@ -133,6 +133,7 @@ impl Memory for Stat {
     fn read_byte(&self, addr: u16) -> u8 {
         assert_eq!(0xFF41, addr);
         let mut v = 0;
+        v |= 1 << 7;
         v |= (self.lyc_ly_interrupt as u8) << 6;
         v |= (self.oam_interrupt as u8) << 5;
         v |= (self.vblank_interrupt as u8) << 4;
@@ -292,7 +293,7 @@ pub struct Vram {
 
 impl Vram {
     pub fn power_on() -> Self {
-        Vram {
+        let mut ret = Vram {
             lcdc: Lcdc::power_on(),
             stat: Stat::power_on(),
             scroll_coords: (0x0, 0x0),
@@ -307,7 +308,11 @@ impl Vram {
             has_new_frame: false,
             memory: vec![0; 0x2000],
             oam: vec![0; 0xA0],
-        }
+        };
+
+        ret.bgp.write_byte(0xFF47, 0xFC);
+
+        ret
     }
 
     pub fn update(&mut self, cycles: usize) -> Option<Vec<InterruptKind>> {
@@ -329,11 +334,12 @@ impl Vram {
         // TODO: If cycles are too high, we don't want to do it all at once. Try and make sure
         // cycles are in groups of 4, i.e. split CPU ticks to cycle operations, not instructions
         self.scanline_cycles += cycles;
+        self.stat.lyc_ly_flag = self.ly == self.lyc;
 
         if self.scanline_cycles >= 456 {
             // Reached end of scanline, wrap around and increment LY
             self.scanline_cycles %= 456;
-            self.ly = (self.ly + 1) % 153;
+            self.ly = (self.ly + 1) % 154;
             self.stat.lyc_ly_flag = self.ly == self.lyc;
 
             if self.stat.lyc_ly_flag
@@ -353,7 +359,7 @@ impl Vram {
                 self.has_new_frame = true;
                 interrupts.push(InterruptKind::VBlank);
                 if self.stat.vblank_interrupt && !interrupts.contains(&InterruptKind::LcdStat) {
-                    interrupts.push(InterruptKind::VBlank);
+                    interrupts.push(InterruptKind::LcdStat);
                 }
             }
         } else if self.scanline_cycles <= 80 {
@@ -428,12 +434,12 @@ impl Vram {
             let mut tile_data_base: u16 = self.memory[tile_map_index as usize] as u16;
 
             // Add the relevant base address depending on which tile data is selected
-            if self.lcdc.tile_data_select {
+            if !self.lcdc.tile_data_select {
                 // The Tile Data index is a signed byte value when using Tile Table 1, reinterpret as an i8.
                 let tile_data_signed = i8::from_le_bytes([tile_data_base as u8]);
                 // Each Tile Data Table entry is 16 bytes, then offset by signed index.
                 // Value of 0 is at 0x1000 into the VRAM, then subtracted or added to by the signed index
-                tile_data_base = ((tile_data_signed * 16) as i16 + 0x1000) as u16;
+                tile_data_base = (((tile_data_signed) as i16 * 16) + 0x1000) as u16;
             } else {
                 // Each Tile Data Table entry is 16 bytes, starting at 0x0000
                 tile_data_base = tile_data_base * 16;
@@ -532,7 +538,19 @@ impl Memory for Vram {
         match addr {
             0x8000..=0x9FFF => self.memory[(addr - 0x8000) as usize] = val,
             0xFE00..=0xFE9F => self.oam[(addr - 0xFE00) as usize] = val,
-            0xFF40 => self.lcdc.write_byte(addr, val),
+            0xFF40 => {
+                self.lcdc.write_byte(addr, val);
+                if !self.lcdc.lcd_enable {
+                    // LCD disabled, reset all LCD driver variables
+                    self.ly = 0;
+                    self.scanline_cycles = 0;
+                    self.stat.mode_flag = LCDMode::Mode0;
+                    for i in 0..self.screen_data.len() {
+                        // Clear all screen data to white
+                        self.screen_data[i] = 255;
+                    }
+                }
+            }
             0xFF41 => self.stat.write_byte(addr, val),
             0xFF42 => self.scroll_coords.1 = val,
             0xFF43 => self.scroll_coords.0 = val,
@@ -554,6 +572,32 @@ impl Memory for Vram {
 #[cfg(test)]
 mod vram_tests {
     use super::*;
+    #[test]
+    fn lcdc_read_write() {
+        let mut lcdc: Lcdc = Lcdc::power_on();
+        lcdc.write_byte(0xFF40, 0b1001_1010);
+        assert_eq!(true, lcdc.lcd_enable);
+        assert_eq!(false, lcdc.window_tile_map_select);
+        assert_eq!(false, lcdc.window_enable);
+        assert_eq!(true, lcdc.tile_data_select);
+        assert_eq!(true, lcdc.background_tile_map_select);
+        assert_eq!(false, lcdc.obj_size_select);
+        assert_eq!(true, lcdc.obj_enable);
+        assert_eq!(false, lcdc.background_enable);
+        lcdc = Lcdc {
+            lcd_enable: false,
+            window_tile_map_select: true,
+            window_enable: true,
+            tile_data_select: false,
+            background_tile_map_select: true,
+            obj_size_select: false,
+            obj_enable: false,
+            background_enable: true
+        };
+        let v = lcdc.read_byte(0xFF40);
+        assert_eq!(0b0110_1001, v);
+    }
+
     #[test]
     fn stat_read_write() {
         let mut stat = Stat::power_on();

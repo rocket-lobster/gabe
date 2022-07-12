@@ -42,7 +42,7 @@ pub struct Mmu {
     serial: Serial,
     hram: [u8; 0x7F],
     intf: u8,
-    ie: bool,
+    ie: u8,
     dma_state: DmaState,
 }
 
@@ -59,7 +59,7 @@ impl Mmu {
             0x00 => Box::new(Mbc0::power_on(rom_data)),
             _ => unimplemented!("MBC given not supported!"),
         };
-        let mmu = Mmu {
+        let mut mmu = Mmu {
             cart,
             apu: Apu::power_on(),
             vram: Vram::power_on(),
@@ -68,8 +68,8 @@ impl Mmu {
             joypad: Joypad::power_on(),
             serial: Serial::power_on(),
             hram: [0; 0x7F],
-            intf: 0,
-            ie: false,
+            intf: 0xE1,
+            ie: 0x00,
             dma_state: DmaState::Stopped,
         };
 
@@ -212,7 +212,7 @@ impl Memory for Mmu {
                 0xFF46 => self.unassigned_read(addr),
                 0xFF40..=0xFF6F => self.vram.read_byte(addr),
                 0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize],
-                0xFFFF => self.ie as u8,
+                0xFFFF => self.ie,
                 _ => self.unassigned_read(addr),
             }
         }
@@ -238,10 +238,7 @@ impl Memory for Mmu {
                 }
                 0xFF40..=0xFF6F => self.vram.write_byte(addr, val),
                 0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize] = val,
-                0xFFFF => match val {
-                    0 => self.ie = false,
-                    _ => self.ie = true,
-                },
+                0xFFFF => self.ie = val,
                 _ => self.unassigned_write(addr, val),
             }
         }

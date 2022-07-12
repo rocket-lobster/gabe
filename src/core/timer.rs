@@ -30,10 +30,10 @@ pub struct Timer {
 impl Timer {
     pub fn power_on() -> Self {
         Timer {
-            div: 0x0,
+            div: 0xAB,
             tima: 0x0,
             tma: 0x0,
-            tac: 0x0,
+            tac: 0xF8,
             div_cycles: 0,
             tima_cycles: 0,
         }

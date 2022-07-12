@@ -187,6 +187,7 @@ const OPCODE_CB_TABLE: [usize; 256] = [
 pub struct Cpu {
     pub reg: Registers,
     pub ime: bool,
+    pub next_ime: bool,
     pub halted: bool,
 }
 
@@ -238,6 +239,7 @@ impl Cpu {
         Cpu {
             reg: Registers::power_on(),
             ime: false,
+            next_ime: false,
             halted: false,
         }
     }
@@ -250,7 +252,7 @@ impl Cpu {
         // Check if any enabled interrupts were requested
         let mut interrupt_reqs = mmu.read_byte(0xFF0F);
         let interrupt_enables = mmu.read_byte(0xFFFF);
-        let interrupt_result = interrupt_reqs & interrupt_enables;
+        let interrupt_result = (interrupt_reqs & interrupt_enables) & 0x1F;
         if interrupt_result == 0x0 {
             // No interrupts were both requested and enabled
             None
@@ -310,6 +312,7 @@ impl Cpu {
                 // We're executing a interrupt procedure, disable all interrupts and
                 // return cycles matching an interrupt service
                 self.ime = false;
+                self.next_ime = false;
                 Some(20)
             }
         }
@@ -334,6 +337,8 @@ impl Cpu {
 
         let old_pc = self.reg.pc;
         let mut opcode = self.imm(mmu);
+        // Set the IME on the cycle after it changes, delaying any interrupt handling.
+        self.ime = self.next_ime;
         let mut using_cb: bool = false;
         trace!(
             "0x{:04X}: 0x{:02X} {}",
@@ -361,8 +366,8 @@ impl Cpu {
             0x37 => self.reg.set_flag(Flag::C, true),
 
             // IME
-            0xF3 => self.ime = false,
-            0xFB => self.ime = true,
+            0xF3 => self.next_ime = false,
+            0xFB => self.next_ime = true,
 
             // LD r8,d8
             0x06 => self.reg.b = self.imm(mmu),
@@ -906,7 +911,7 @@ impl Cpu {
             0xD9 => {
                 let a = self.stack_pop(mmu);
                 self.reg.pc = a;
-                self.ime = true;
+                self.next_ime = true;
             }
 
             // RST
