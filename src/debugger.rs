@@ -68,7 +68,7 @@ impl Debugger {
         loop {
             match &self.current_command {
                 DebugCommand::Disassemble(n) => {
-                    let mem = state.get_memory_range(pc..pc + (*n as u16));
+                    let mem = state.get_memory_range(pc as usize..pc as usize + *n);
                     let disasm = disassemble::disassemble_block(mem, pc);
                     for (p, s) in disasm {
                         println!("0x{:04X}: {}", p, s);
@@ -82,7 +82,7 @@ impl Debugger {
                         println!("Total T-cycles: {}", debug_data.total_cycles);
                         println!("IE: {:02X}  IF: {:02X}", debug_data.ie_data, debug_data.if_data);
                         // Grab max number of bytes needed for any instruction
-                        let mem = state.get_memory_range(pc..pc + 3);
+                        let mem = state.get_memory_range(pc as usize..pc as usize + 3);
                         let disasm = disassemble::disassemble_block(mem, pc);
                         println!("0x{:04X}: {}", disasm[0].0, disasm[0].1);
                         println!("LCDC: {:02X}  STAT: {:02X}  LY: {:02X}", debug_data.vram_lcdc, debug_data.vram_stat, debug_data.vram_ly);
@@ -106,26 +106,33 @@ impl Debugger {
                     }
                 }
                 DebugCommand::Dump(r) => {
-                    let new_start: u16 = if r.start % 16 != 0 {
+                    let pad_start: usize = if r.start % 16 != 0 {
                         // We start in the middle of the line, find nearest line start
                         let pad = r.start % 16;
-                        r.start - pad
+                        (r.start - pad) as usize
                     } else {
-                        r.start
+                        r.start as usize
                     };
 
-                    let new_end: u16 = if r.end % 16 != 0 {
+                    // Range provided is end inclusive, increment by one to ensure it's included
+                    // Convert to usize to not wrap after going over u16::MAX
+                    // Conversion needed since Ranges are end exclusive in iterators, and we need to display
+                    // 0xFFFF in memory, which requires a Range.end value of u16::MAX + 1
+                    let new_end = r.end as usize + 1;
+                    let pad_end: usize = if new_end % 16 != 0 {
                         // We end in the middle of the line, fill remaining line
-                        let pad = 16 - (r.end % 16);
-                        r.end + pad
+                        let pad = 16 - new_end;
+                        // Value over u16::MAX is checked in the memory range routine when iterating over
+                        // results.
+                        new_end + pad
                     } else {
-                        r.end
+                        new_end
                     };
                     let vals = state.get_memory_range(std::ops::Range {
-                        start: new_start,
-                        end: new_end,
+                        start: pad_start,
+                        end: pad_end,
                     });
-                    let mut current_line = new_start;
+                    let mut current_line:u32 = pad_start as u32;
                     for v in vals.chunks(16) {
                         print!("0x{:04X}: ", current_line);
                         for x in v.iter() {
