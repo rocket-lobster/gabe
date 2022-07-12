@@ -77,12 +77,15 @@ impl Debugger {
                 DebugCommand::Step(n) => {
                     if *n == 0 {
                         println!("Completed steps.");
-                        let cpu_state = state.get_debug_state().cpu_data;
-                        println!("{}", cpu_state);
+                        let debug_data = state.get_debug_state();
+                        println!("{}", debug_data.cpu_data);
+                        println!("Total T-cycles: {}", debug_data.total_cycles);
+                        println!("IE: {:02X}  IF: {:02X}", debug_data.ie_data, debug_data.if_data);
                         // Grab max number of bytes needed for any instruction
                         let mem = state.get_memory_range(pc..pc + 3);
                         let disasm = disassemble::disassemble_block(mem, pc);
                         println!("0x{:04X}: {}", disasm[0].0, disasm[0].1);
+                        println!("LCDC: {:02X}  STAT: {:02X}  LY: {:02X}", debug_data.vram_lcdc, debug_data.vram_stat, debug_data.vram_ly);
                     } else {
                         self.current_command = DebugCommand::Step(n - 1);
                         break;

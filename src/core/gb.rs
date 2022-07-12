@@ -1,4 +1,5 @@
 use super::cpu;
+use super::memory::Memory;
 use super::mmu;
 use super::vram::FrameData;
 
@@ -8,10 +9,17 @@ use std::path::Path;
 pub struct Gameboy {
     cpu: cpu::Cpu,
     mmu: mmu::Mmu,
+    total_cycles: usize,
 }
 
 pub struct GbDebug {
     pub cpu_data: cpu::Cpu,
+    pub ie_data: u8,
+    pub if_data: u8,
+    pub vram_lcdc: u8,
+    pub vram_stat: u8,
+    pub vram_ly: u8,
+    pub total_cycles: usize,
 }
 
 impl Gameboy {
@@ -21,6 +29,7 @@ impl Gameboy {
         Ok(Gameboy {
             cpu: cpu::Cpu::power_on(),
             mmu: mmu::Mmu::power_on(path)?,
+            total_cycles: 0,
         })
     }
 
@@ -40,6 +49,8 @@ impl Gameboy {
     pub fn tick(&mut self) -> Option<FrameData> {
         let cycles = self.cpu.tick(&mut self.mmu);
 
+        self.total_cycles += cycles;
+
         // Update memory
         self.mmu.update(cycles)
     }
@@ -47,6 +58,12 @@ impl Gameboy {
     pub fn get_debug_state(&self) -> GbDebug {
         GbDebug {
             cpu_data: self.cpu.get_debug_data(),
+            if_data: self.mmu.read_byte(0xFF0F),
+            ie_data: self.mmu.read_byte(0xFFFF),
+            vram_lcdc: self.mmu.read_byte(0xFF40),
+            vram_stat: self.mmu.read_byte(0xFF41),
+            vram_ly: self.mmu.read_byte(0xFF44),
+            total_cycles: self.total_cycles,
         }
     }
 
