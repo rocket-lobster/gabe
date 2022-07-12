@@ -44,6 +44,7 @@ pub struct Mmu {
     intf: u8,
     ie: u8,
     dma_state: DmaState,
+    previous_dma: u8,
 }
 
 impl Mmu {
@@ -59,7 +60,7 @@ impl Mmu {
             0x00 => Box::new(Mbc0::power_on(rom_data)),
             _ => unimplemented!("MBC given not supported!"),
         };
-        let mut mmu = Mmu {
+        let mmu = Mmu {
             cart,
             apu: Apu::power_on(),
             vram: Vram::power_on(),
@@ -71,6 +72,7 @@ impl Mmu {
             intf: 0xE1,
             ie: 0x00,
             dma_state: DmaState::Stopped,
+            previous_dma: 0xFF,
         };
 
         Ok(mmu)
@@ -212,7 +214,7 @@ impl Memory for Mmu {
                 0xFF04..=0xFF07 => self.timer.read_byte(addr),
                 0xFF0F => self.intf,
                 0xFF10..=0xFF2F => self.apu.read_byte(addr),
-                0xFF46 => self.unassigned_read(addr),
+                0xFF46 => self.previous_dma,
                 0xFF40..=0xFF6F => self.vram.read_byte(addr),
                 0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize],
                 0xFFFF => self.ie,
@@ -238,6 +240,7 @@ impl Memory for Mmu {
                 0xFF46 => {
                     debug!("Beginning DMA Transfer at {:2X}00...", val);
                     self.dma_state = DmaState::Starting(val);
+                    self.previous_dma = val;
                 }
                 0xFF40..=0xFF6F => self.vram.write_byte(addr, val),
                 0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize] = val,
