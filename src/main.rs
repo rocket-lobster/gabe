@@ -105,26 +105,6 @@ fn main() {
         window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
     }
 
-    let mut color: u8 = 255;
-
-    // Dummy buffer for testing
-    let dummy_buffer: Vec<u8> = (0..69120)
-        .map(move |v| {
-            if v % 3 == 0 {
-                color = match color {
-                    0 => 85,
-                    85 => 170,
-                    170 => 255,
-                    255 => 0,
-                    _ => panic!(),
-                };
-            }
-            color
-        })
-        .collect();
-
-    let _dummy_buffer = dummy_buffer.into_boxed_slice();
-
     while window.is_open() && !window.is_key_down(Key::Escape) {
         if emu.debugger.is_running() {
             let action = emu.debugger.update(&emu.gb);
