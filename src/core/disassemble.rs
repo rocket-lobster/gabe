@@ -804,6 +804,10 @@ pub fn disassemble_block(data: Box<[u8]>, pc: u16) -> Vec<(u16, String)> {
             0xEF => ret.push((current_pc, format!("{:02X}:\t rst 28", opcode).to_string())),
             0xF7 => ret.push((current_pc, format!("{:02X}:\t rst 30", opcode).to_string())),
             0xFF => ret.push((current_pc, format!("{:02X}:\t rst 38", opcode).to_string())),
+            0x07 => ret.push((current_pc, format!("{:02X}:\t rlca", opcode).to_string())),
+            0x17 => ret.push((current_pc, format!("{:02X}:\t rla", opcode).to_string())),
+            0x0F => ret.push((current_pc, format!("{:02X}:\t rrca", opcode).to_string())),
+            0x1F => ret.push((current_pc, format!("{:02X}:\t rra", opcode).to_string())),
 
             // CB Prefix
             0xCB => {

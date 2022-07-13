@@ -617,7 +617,7 @@ mod vram_tests {
             mode_flag: LCDMode::Mode2,
         };
         let v = stat.read_byte(0xFF41);
-        assert_eq!(0b0010_1110, v);
+        assert_eq!(0b1010_1110, v);
     }
 
     #[test]

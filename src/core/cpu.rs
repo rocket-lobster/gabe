@@ -688,6 +688,11 @@ impl Cpu {
                 self.reg.set_flag(Flag::H, true);
             }
 
+            // DAA
+            0x27 => {
+                self.reg.a = self.daa();
+            }
+
             // INC r8
             0x04 => self.reg.b = self.inc(self.reg.b),
             0x0C => self.reg.c = self.inc(self.reg.c),
@@ -946,6 +951,34 @@ impl Cpu {
             0xFF => {
                 self.stack_push(mmu, self.reg.pc);
                 self.reg.pc = 0x38;
+            }
+
+            // RLCA
+            0x07 => {
+                self.rlc(self.reg.a);
+                // Flag is always reset in this instruction
+                self.reg.set_flag(Flag::Z, false);
+            }
+
+            // RLA
+            0x17 => {
+                self.rl(self.reg.a);
+                // Flag is always reset in this instruction
+                self.reg.set_flag(Flag::Z, false);
+            }
+
+            // RRCA
+            0x0F => {
+                self.rrc(self.reg.a);
+                // Flag is always reset in this instruction
+                self.reg.set_flag(Flag::Z, false);
+            }
+
+            // RRA
+            0x1F => {
+                self.rr(self.reg.a);
+                // Flag is always reset in this instruction
+                self.reg.set_flag(Flag::Z, false);
             }
 
             // CB Prefix
@@ -1873,6 +1906,33 @@ impl Cpu {
     fn set(&mut self, r: u8, b: u8) -> u8 {
         r | (0x1 << b)
     }
+
+    fn daa(&mut self) -> u8 {
+        // Take the contents of A, reinterpret bits into BCD, based on the state of the flags
+        let mut value: u16 = self.reg.a as u16;
+        let mut correction: u8 = 0x0;
+        if self.reg.get_flag(Flag::H) || ((self.reg.a & 0xF) > 9) {
+            // Apply correction value to lower nibble
+            correction |= 0x6;
+        }
+        if self.reg.get_flag(Flag::C) || ((self.reg.a >> 4) & 0xF) > 9 {
+            // Apply correction value to upper nibble
+            correction |= 0x60;
+            self.reg.set_flag(Flag::C, true);
+        } else {
+            self.reg.set_flag(Flag::C, false);
+        }
+
+        if self.reg.get_flag(Flag::N) {
+            // We did a subtraction, so 2's compliment the correction
+            correction = (!correction) + 1;
+        }
+        value += correction as u16;
+        value &= 0xff;
+        self.reg.set_flag(Flag::Z, value == 0);
+        self.reg.set_flag(Flag::H, false);
+        value as u8
+    }
 }
 
 #[cfg(test)]
@@ -1946,5 +2006,18 @@ mod cpu_tests {
         v = cpu.rr(0b1101_1001);
         assert_eq!(v, 0b0110_1100);
         assert_eq!(cpu.reg.get_flag(Flag::C), true);
+    }
+
+    #[test]
+    fn daa_test() {
+        let mut cpu = Cpu::power_on();
+        cpu.reg.a = 0x45;
+        cpu.reg.b = 0x38;
+        cpu.add(cpu.reg.b);
+        cpu.reg.a = cpu.daa();
+        assert_eq!(cpu.reg.a, 0x83);
+        cpu.sub(cpu.reg.b);
+        cpu.reg.a = cpu.daa();
+        assert_eq!(cpu.reg.a, 0x45);
     }
 }
