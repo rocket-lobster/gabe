@@ -275,6 +275,12 @@ pub struct Vram {
     /// determines which Mode the LCD is in. Corresponds to CPU cycles passed in to MMU.
     scanline_cycles: usize,
 
+    /// A list of OAM entries that will be drawn during the next scanline draw.
+    /// Represented as entries in the OAM, 0-39 (40 total entries)
+    /// Cleared and repopulated during Mode 2 (OAM Search)
+    /// Read during Mode 3 (Draw scanline)
+    obj_list: Vec<u8>,
+
     /// Data containing the rendered scanlines. Presented as row-major, meaning that
     /// the first (top-left) pixel is represented by the first 3 values, the next pixel to the right is
     /// represented by the next 3 values, and the next row doesn't begin until the SCREEN_WIDTH * 3 value.
@@ -304,6 +310,7 @@ impl Vram {
             obp1: PaletteData::init(),
             window_coords: (0x0, 0x0),
             scanline_cycles: 0,
+            obj_list: Vec::with_capacity(40),
             screen_data: vec![0x0; 3 * SCREEN_WIDTH * SCREEN_HEIGHT].into_boxed_slice(),
             has_new_frame: false,
             memory: vec![0; 0x2000],
@@ -367,6 +374,8 @@ impl Vram {
             if self.stat.mode_flag != LCDMode::Mode2 {
                 // We are just entering Mode 2
                 self.stat.mode_flag = LCDMode::Mode2;
+                // Perform the OAM Scan to collect the OBJs on this line
+                self.oam_search();
                 if self.stat.oam_interrupt && !interrupts.contains(&InterruptKind::LcdStat) {
                     interrupts.push(InterruptKind::LcdStat);
                 }
@@ -403,6 +412,27 @@ impl Vram {
         }
     }
 
+    /// Scan the current contents of OAM to find all OBJs that are on the same scanline.
+    /// Store into a list that will be searched during draw_sprites() to handle the rendering.
+    fn oam_search(&mut self) {
+        // Clear old entries since last scanline
+        self.obj_list.clear();
+
+        // Check the vertical size of each obj
+        let obj_size_adj = if self.lcdc.obj_size_select { 0 } else { 8 };
+
+        // Find all sprites in the current ly row
+        for (i, data) in self.oam.chunks(4).enumerate() {
+            // Check if the OBJ y-pos is in the range of values that would put a line in the current ly
+            if data[0] > self.ly + obj_size_adj && data[0] <= self.ly + 16 {
+                // This OBJ is in the current line, add to the list if we have < 10 OBJs already
+                if self.obj_list.len() < 10 {
+                    self.obj_list.push(i as u8);
+                }
+            }
+        }
+    }
+
     /// Check internal state to determine what horizontal scanline background
     /// pixels should be written to `screen_data`. Includes checking if rendering
     /// window tiles in addition to background tiles. Only called during H-Blank,
@@ -410,28 +440,65 @@ impl Vram {
     fn draw_background(&mut self) {
         // For each pixel in the current scanline given by LY
         for p in 0..SCREEN_WIDTH {
-            // Get the coordinates for the tile map
-            let tile_x: u8 = self.scroll_coords.0.wrapping_add(p as u8) / 8;
-            let tile_y: u8 = self.scroll_coords.1.wrapping_add(self.ly) / 8;
+            // Get the tile data index and pixel offsets, either from the window map or the background map
+            let (mut tile_data_base, tile_pixel_x, tile_pixel_y) = if self.lcdc.window_enable
+                && p as u8 >= self.window_coords.0 - 7
+                && self.ly >= self.window_coords.1
+            {
+                // We are inside the window, so grab window tiles
+                let tile_x: u8 = (p as u8 - self.window_coords.0 - 7) / 8;
+                let tile_y: u8 = (self.ly - self.window_coords.1) / 8;
 
-            // Get the pixel coordinates for the tile
-            let tile_pixel_x: u8 = self.scroll_coords.0.wrapping_add(p as u8) % 8;
-            let tile_pixel_y: u8 = self.scroll_coords.1.wrapping_add(self.ly) % 8;
+                // Get the pixel coordinates for the tile
+                let tile_pixel_x: u8 = (p as u8 - self.window_coords.0 - 7) % 8;
+                let tile_pixel_y: u8 = (self.ly - self.window_coords.1) % 8;
 
-            // Get the tile map offset from what tile we are using
-            let mut tile_map_index: u16 = (tile_y as u16 * 32) + tile_x as u16;
+                // Get the tile map offset from what tile we are using
+                let mut tile_map_index: u16 = (tile_y as u16 * 32) + tile_x as u16;
 
-            // Add the relevant base address depending on which tile map is selected
-            // Tile Map 0: 0x9800 - 0x8000 = 0x1800
-            // Tile Map 1: 0x9C00 - 0x8000 = 0x1C00
-            if self.lcdc.background_tile_map_select {
-                tile_map_index = tile_map_index + 0x1C00;
+                // Add the relevant base address depending on which tile map is selected
+                // Tile Map 0: 0x9800 - 0x8000 = 0x1800
+                // Tile Map 1: 0x9C00 - 0x8000 = 0x1C00
+                if self.lcdc.window_tile_map_select {
+                    tile_map_index += 0x1C00;
+                } else {
+                    tile_map_index += 0x1800;
+                }
+
+                // Grab the tile data index
+                (
+                    self.memory[tile_map_index as usize] as u16,
+                    tile_pixel_x,
+                    tile_pixel_y,
+                )
             } else {
-                tile_map_index = tile_map_index + 0x1800;
-            }
+                // No window, just grab from background map using scroll coords
+                let tile_x: u8 = self.scroll_coords.0.wrapping_add(p as u8) / 8;
+                let tile_y: u8 = self.scroll_coords.1.wrapping_add(self.ly) / 8;
 
-            // Get the byte representing the tile data used at this location
-            let mut tile_data_base: u16 = self.memory[tile_map_index as usize] as u16;
+                // Get the pixel coordinates for the tile
+                let tile_pixel_x: u8 = self.scroll_coords.0.wrapping_add(p as u8) % 8;
+                let tile_pixel_y: u8 = self.scroll_coords.1.wrapping_add(self.ly) % 8;
+
+                // Get the tile map offset from what tile we are using
+                let mut tile_map_index: u16 = (tile_y as u16 * 32) + tile_x as u16;
+
+                // Add the relevant base address depending on which tile map is selected
+                // Tile Map 0: 0x9800 - 0x8000 = 0x1800
+                // Tile Map 1: 0x9C00 - 0x8000 = 0x1C00
+                if self.lcdc.background_tile_map_select {
+                    tile_map_index += 0x1C00;
+                } else {
+                    tile_map_index += 0x1800;
+                }
+
+                // Grab the tile data index
+                (
+                    self.memory[tile_map_index as usize] as u16,
+                    tile_pixel_x,
+                    tile_pixel_y,
+                )
+            };
 
             // Add the relevant base address depending on which tile data is selected
             if !self.lcdc.tile_data_select {
@@ -442,7 +509,7 @@ impl Vram {
                 tile_data_base = (((tile_data_signed) as i16 * 16) + 0x1000) as u16;
             } else {
                 // Each Tile Data Table entry is 16 bytes, starting at 0x0000
-                tile_data_base = tile_data_base * 16;
+                tile_data_base *= 16;
             }
 
             // Each set of 2 bytes represets the least and most signficant bits in the tile's color number, respectively,
@@ -478,7 +545,104 @@ impl Vram {
     /// with background and window tiles. Goes through OBJ memory to determine the
     /// sprites to be drawn over the background tiles, and writes them in the same
     /// `ly` scanline within `screen_data`.
-    fn draw_sprites(&mut self) {}
+    fn draw_sprites(&mut self) {
+        for p in 0..SCREEN_WIDTH {
+            let mut lowest_x = 0xFFu8;
+            // Once all OBJs are found, go through the line and check the valid OBJs for the current scanline pixel being placed
+            // Go in reverse so that the first valid OAM entries override past ones
+            for i in self.obj_list.iter().rev() {
+                let y_pos = self.oam[(i * 4) as usize];
+                let x_pos = self.oam[((i * 4) + 1) as usize];
+                let tile_idx = self.oam[((i * 4) + 2) as usize];
+                let attribs = self.oam[((i * 4) + 3) as usize];
+
+                // Check x-pos for this OBJ
+                if x_pos > p as u8 && x_pos <= p as u8 + 8 {
+                    if x_pos <= lowest_x {
+                        // This OBJ has higher priority than any previous one
+                        lowest_x = x_pos;
+                        let tile_pixel_x = p as u8 + 8 - x_pos;
+                        let mut tile_pixel_y = self.ly as u8 + 16 - y_pos;
+                        
+                        // Parse attributes
+                        let bg_prio = (attribs & 0b1000_0000) != 0;
+                        let y_flip = (attribs & 0b0100_0000) != 0;
+                        let x_flip = (attribs & 0b0010_0000) != 0;
+                        let obp1 = (attribs & 0b0001_0000) != 0;
+
+                        // Get the location of the tile data, starting at 0x8000
+                        // Internally, we start at 0x0000
+                        let tile_data_base = if self.lcdc.obj_size_select {
+                            // 8x16
+                            if (tile_pixel_y > 7 && !y_flip) || (tile_pixel_y <= 7 && y_flip) {
+                                // Bottom tile
+                                ((tile_idx | 0x01) * 16) as u16
+                            } else {
+                                // Top tile
+                                ((tile_idx & 0xFE) * 16) as u16
+                            }
+                        } else {
+                            tile_idx as u16 * 16
+                        };                        
+
+                        if y_flip {
+                            // Invert the bits and mask the lower 3 to get the new line offset
+                            tile_pixel_y = !tile_pixel_y & 0x7;
+                        } else {
+                            // Just mask the lower 3 bits to contain it within the given tile
+                            tile_pixel_y &= 0x7
+                        }
+
+                        // Each set of 2 bytes represets the least and most signficant bits in the tile's color number, respectively,
+                        // for each line of 8 pixels in the tile.
+                        // Byte 0-1 is first line, Byte 2-3 is second line, etc.
+                        // Offset the line we're looking for by applying the tile pixel y-offset, and grab both color bytes
+                        let tile_colors_lsb =
+                            self.memory[(tile_data_base + (tile_pixel_y as u16 * 2)) as usize];
+                        let tile_colors_msb =
+                            self.memory[(tile_data_base + (tile_pixel_y as u16 * 2) + 1) as usize];
+
+                        // Which pixel in the line we shift over changes on the status of x_flip
+                        let pixel_shift = if x_flip {
+                            tile_pixel_x
+                        } else {
+                            !tile_pixel_x & 0x7
+                        };
+
+                        let tile_color_number = (((tile_colors_msb >> pixel_shift) & 0x1) << 1)
+                            | ((tile_colors_lsb >> pixel_shift) & 0x1);
+
+                        let pixel_shade = if obp1 {
+                            match tile_color_number {
+                                0 => continue, // Color 0 is transparent, ignore
+                                1 => self.obp1.color1,
+                                2 => self.obp1.color2,
+                                3 => self.obp1.color3,
+                                _ => panic!("Incorrect color number selection logic."),
+                            }
+                        } else {
+                            match tile_color_number {
+                                0 => continue, // Color 0 is transparent, ignore
+                                1 => self.obp0.color1,
+                                2 => self.obp0.color2,
+                                3 => self.obp0.color3,
+                                _ => panic!("Incorrect color number selection logic."),
+                            }
+                        };
+
+                        let pixel_rgb = Self::shade_to_rgb_u8(&pixel_shade);
+
+                        self.screen_data[((self.ly as usize * (SCREEN_WIDTH * 3)) + (p * 3))] =
+                            pixel_rgb.0;
+                        self.screen_data[((self.ly as usize * (SCREEN_WIDTH * 3)) + (p * 3) + 1)] =
+                            pixel_rgb.1;
+                        self.screen_data[((self.ly as usize * (SCREEN_WIDTH * 3)) + (p * 3) + 2)] =
+                            pixel_rgb.2;
+                    }
+                }
+            }
+        }
+    }
 
     /// Converts the given GrayShade enum value into a tuple of
     /// u8 values representing the RGB of the shade
@@ -592,7 +756,7 @@ mod vram_tests {
             background_tile_map_select: true,
             obj_size_select: false,
             obj_enable: false,
-            background_enable: true
+            background_enable: true,
         };
         let v = lcdc.read_byte(0xFF40);
         assert_eq!(0b0110_1001, v);
