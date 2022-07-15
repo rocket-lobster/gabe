@@ -12,6 +12,19 @@ pub struct Gameboy {
     total_cycles: usize,
 }
 
+/// The supported input states for the Joypad.
+/// User provides a combined mask of these values during each step call
+pub enum GbKeys {
+    Up,
+    Down,
+    Left,
+    Right,
+    A,
+    B,
+    Start,
+    Select
+}
+
 pub struct GbDebug {
     pub cpu_data: cpu::Cpu,
     pub ie_data: u8,
@@ -34,9 +47,9 @@ impl Gameboy {
     }
 
     /// Advances the Gameboy internal state until a frame is completed.
-    pub fn step(&mut self) -> FrameData {
+    pub fn step(&mut self, keys_pressed: Option<&[GbKeys]>) -> FrameData {
         loop {
-            if let Some(i) = self.tick() {
+            if let Some(i) = self.tick(keys_pressed) {
                 trace!("Frame complete");
                 return i;
             }
@@ -46,13 +59,13 @@ impl Gameboy {
     /// Executes one CPU instruction and updates the other
     /// subsystems with the appropriate number of cycles
     /// Returns a frame if completed during the tick.
-    pub fn tick(&mut self) -> Option<FrameData> {
+    pub fn tick(&mut self, keys_pressed: Option<&[GbKeys]>) -> Option<FrameData> {
         let cycles = self.cpu.tick(&mut self.mmu);
 
         self.total_cycles += cycles;
 
         // Update memory
-        self.mmu.update(cycles)
+        self.mmu.update(cycles, keys_pressed)
     }
 
     pub fn get_debug_state(&self) -> GbDebug {

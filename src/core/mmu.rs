@@ -4,6 +4,7 @@ use std::path::Path;
 use std::{io, panic};
 
 use super::apu::Apu;
+use super::gb::GbKeys;
 use super::interrupt::InterruptKind;
 use super::joypad::Joypad;
 use super::mbc0::Mbc0;
@@ -84,12 +85,15 @@ impl Mmu {
     /// block, for the CPU to handle on the next fetch.
     /// If a frame was completed during execution, return `FrameData` to caller,
     /// otherwise return `None`
-    pub fn update(&mut self, cycles: usize) -> Option<FrameData> {
+    pub fn update(&mut self, cycles: usize, keys_pressed: Option<&[GbKeys]>) -> Option<FrameData> {
         if self.dma_state != DmaState::Stopped {
             self.dma_state = self.run_dma(cycles);
         }
         // Update APU
         // Update Joypad
+        if let Some(i) = self.joypad.update(keys_pressed) {
+            self.request_interrupt(i);
+        }
 
         // Update Timers
         if let Some(i) = self.timer.update(cycles) {

@@ -4,7 +4,7 @@ extern crate env_logger;
 mod core;
 mod debugger;
 
-use crate::core::gb::Gameboy;
+use crate::core::gb::{Gameboy, GbKeys};
 
 use std::{path::Path, io::{Read, Write}, fs::File};
 
@@ -111,7 +111,12 @@ fn main() {
             match action {
                 DebuggerState::Running => {
                     // Ignore frames
-                    emu.gb.tick();
+                    let keys = get_key_states(&window);
+                    if keys.is_empty() {
+                        emu.gb.tick(None);
+                    } else {
+                        emu.gb.tick(Some(keys.as_slice()));
+                    }
                 }
                 DebuggerState::Stopping => {
                     emu.debugger.quit();
@@ -120,7 +125,14 @@ fn main() {
             }
             window.update();
         } else {
-            let frame = emu.gb.step();
+            let keys = get_key_states(&window);
+            let keys_pressed = if keys.is_empty() {
+                None
+            } else {
+                Some(keys.as_slice())
+            };
+
+            let frame = emu.gb.step(keys_pressed);
             emu.current_frame = frame;
             // Convert the series of u8s into a series of RGB-encoded u32s
             let iter = emu.current_frame.chunks(3);
@@ -152,3 +164,21 @@ fn disassemble_to_file(path: impl AsRef<Path>) -> Result<(), std::io::Error> {
     }
     Ok(())
 } 
+
+fn get_key_states(window: &Window) -> Vec<GbKeys> {
+    let mut ret: Vec<GbKeys> = vec![];
+    window.get_keys().iter().for_each(|key| {
+        match key {
+            Key::Z => ret.push(GbKeys::A),
+            Key::X => ret.push(GbKeys::B),
+            Key::Enter => ret.push(GbKeys::Start),
+            Key::Backspace => ret.push(GbKeys::Select),
+            Key::Up => ret.push(GbKeys::Up),
+            Key::Down => ret.push(GbKeys::Down),
+            Key::Left => ret.push(GbKeys::Left),
+            Key::Right => ret.push(GbKeys::Right),
+            _ => (),
+        }
+    });
+        ret
+}
