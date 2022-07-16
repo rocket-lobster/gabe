@@ -5,6 +5,7 @@ mod cpu;
 mod interrupt;
 mod joypad;
 mod mbc0;
+mod mbc1;
 mod memory;
 mod mmu;
 mod serial;

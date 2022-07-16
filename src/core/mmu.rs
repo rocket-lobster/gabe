@@ -8,6 +8,7 @@ use super::gb::GbKeys;
 use super::interrupt::InterruptKind;
 use super::joypad::Joypad;
 use super::mbc0::Mbc0;
+use super::mbc1::Mbc1;
 use super::memory::Memory;
 use super::serial::Serial;
 use super::timer::Timer;
@@ -57,9 +58,13 @@ impl Mmu {
         let mut rom_data = Vec::new();
         f.read_to_end(&mut rom_data)?;
         debug!("ROM size: {}", rom_data.len());
+        let rom_size = rom_data[0x148];
+        let ram_size = rom_data[0x149];
+        debug!("Sizes:\t ROM: {:02X}\tRAM: {:02X}", rom_size, ram_size);
         let cart: Box<dyn Memory> = match rom_data[0x147] {
             0x00 => Box::new(Mbc0::power_on(rom_data)),
-            _ => unimplemented!("MBC given not supported!"),
+            0x01 | 0x02 | 0x03 => Box::new(Mbc1::power_on(rom_data, rom_size, ram_size)),
+            _ => unimplemented!("MBC value {:02X} not supported!", rom_data[0x147]),
         };
         let mmu = Mmu {
             cart,
