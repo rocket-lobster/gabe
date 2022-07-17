@@ -19,9 +19,9 @@ impl Joypad {
 
     pub fn update(&mut self, keys_pressed: Option<&[GbKeys]>) -> Option<InterruptKind> {
         let old_state = self.state;
+        // Reset values
+        self.state |= 0xFFu8;
         if let Some(keys) = keys_pressed {
-            // Reset values
-            self.state &= 0xFFu8;
             keys.iter().for_each(|k| match k {
                 GbKeys::Start => self.state &= 0b0111_1111,
                 GbKeys::Select => self.state &= 0b1011_1111,
@@ -68,3 +68,65 @@ impl Memory for Joypad {
         }
     }
 }
+
+#[cfg(test)]
+mod joypad_tests {
+    use crate::core::memory::Memory;
+
+    use super::Joypad;
+    use super::GbKeys;
+
+    #[test]
+    fn action_buttons() {
+        let mut joy = Joypad::power_on();
+        joy.write_byte(0xFF00, 0xDF);
+        assert_eq!(joy.update(Some(&[GbKeys::A])).is_some(), true);
+        assert_eq!(joy.read_byte(0xFF00), 0b1101_1110);
+        assert_eq!(joy.update(Some(&[GbKeys::B, GbKeys::Start])).is_some(), true);
+        assert_eq!(joy.read_byte(0xFF00), 0b1101_0101);
+        assert_eq!(joy.update(Some(&[GbKeys::Select, GbKeys::A, GbKeys::Down])).is_some(), true);
+        assert_eq!(joy.read_byte(0xFF00), 0b1101_1010);
+        assert_eq!(joy.update(Some(&[GbKeys::Select, GbKeys::A, GbKeys::Down])).is_some(), false);
+        assert_eq!(joy.read_byte(0xFF00), 0b1101_1010);
+        assert_eq!(joy.update(None).is_some(), false);
+        assert_eq!(joy.read_byte(0xFF00), 0b1101_1111);
+    }
+
+    #[test]
+    fn direction_buttons() {
+        let mut joy = Joypad::power_on();
+        joy.write_byte(0xFF00, 0xEF);
+        assert_eq!(joy.update(Some(&[GbKeys::Up])).is_some(), true);
+        assert_eq!(joy.read_byte(0xFF00), 0b1110_1011);
+        assert_eq!(joy.update(Some(&[GbKeys::Down, GbKeys::Left])).is_some(), true);
+        assert_eq!(joy.read_byte(0xFF00), 0b1110_0101);
+        assert_eq!(joy.update(Some(&[GbKeys::Right, GbKeys::A])).is_some(), true);
+        assert_eq!(joy.read_byte(0xFF00), 0b1110_1110);
+        assert_eq!(joy.update(Some(&[GbKeys::Right, GbKeys::A])).is_some(), false);
+        assert_eq!(joy.read_byte(0xFF00), 0b1110_1110);
+        assert_eq!(joy.update(None).is_some(), false);
+        assert_eq!(joy.read_byte(0xFF00), 0b1110_1111);
+    }
+
+    #[test]
+    fn action_direction_transition() {
+        let mut joy = Joypad::power_on();
+        joy.write_byte(0xFF00, 0xDF);
+        assert_eq!(joy.update(Some(&[GbKeys::A])).is_some(), true);
+        assert_eq!(joy.read_byte(0xFF00), 0b1101_1110);
+        assert_eq!(joy.update(Some(&[GbKeys::B, GbKeys::Start])).is_some(), true);
+        assert_eq!(joy.read_byte(0xFF00), 0b1101_0101);
+        assert_eq!(joy.update(Some(&[GbKeys::Select, GbKeys::A, GbKeys::Down])).is_some(), true);
+        assert_eq!(joy.read_byte(0xFF00), 0b1101_1010);
+        joy.write_byte(0xFF00, 0xEF);
+        assert_eq!(joy.update(Some(&[GbKeys::Up])).is_some(), true);
+        assert_eq!(joy.read_byte(0xFF00), 0b1110_1011);
+        assert_eq!(joy.update(Some(&[GbKeys::Down, GbKeys::Left])).is_some(), true);
+        assert_eq!(joy.read_byte(0xFF00), 0b1110_0101);
+        assert_eq!(joy.update(Some(&[GbKeys::Right, GbKeys::A])).is_some(), true);
+        assert_eq!(joy.read_byte(0xFF00), 0b1110_1110);
+        assert_eq!(joy.update(None).is_some(), false);
+        assert_eq!(joy.read_byte(0xFF00), 0b1110_1111);
+    }
+}
+
