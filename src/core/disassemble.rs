@@ -366,6 +366,16 @@ pub fn disassemble_block(data: Box<[u8]>, pc: u16) -> Vec<(u16, String)> {
                 current_pc,
                 format!("{:02X}:\t ld sp,hl", opcode).to_string(),
             )),
+            0xF8 => {
+                if let Some(a1) = iter.next() {
+                    ret.push((
+                        current_pc,
+                        format!("{:02X}{:02X}:\t ld hl,sp+${:02X}", opcode, a1, a1).to_string(),
+                    ))
+                } else {
+                    break;
+                }
+            }
             0x80 => ret.push((current_pc, format!("{:02X}:\t add a,b", opcode).to_string())),
             0x81 => ret.push((current_pc, format!("{:02X}:\t add a,c", opcode).to_string())),
             0x82 => ret.push((current_pc, format!("{:02X}:\t add a,d", opcode).to_string())),

@@ -121,7 +121,7 @@ impl Debugger {
                     let new_end = r.end as usize + 1;
                     let pad_end: usize = if new_end % 16 != 0 {
                         // We end in the middle of the line, fill remaining line
-                        let pad = 16 - new_end;
+                        let pad = 16 - (new_end % 16);
                         // Value over u16::MAX is checked in the memory range routine when iterating over
                         // results.
                         new_end + pad
@@ -303,7 +303,11 @@ impl Debugger {
                                     }
                                 } else {
                                     // Just print 10 lines
-                                    let end = start + (16 * 10);
+                                    let end = if start as u32 + (16 * 10) > 0xFFFF {
+                                        0xFFFF
+                                    } else {
+                                        start + (16 * 10) 
+                                    };
                                     DebugCommand::Dump(start..end)
                                 }
                             } else {
