@@ -194,7 +194,7 @@ impl Mmu {
 
     fn unassigned_read(&self, addr: u16) -> u8 {
         error!("Memory Read at unassigned location {:4X}", addr);
-        0
+        0xFF
     }
 
     fn unassigned_write(&mut self, addr: u16, val: u8) {

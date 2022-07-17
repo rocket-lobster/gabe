@@ -693,7 +693,7 @@ impl Memory for Vram {
             0xFF4B => self.window_coords.0,
             _ => {
                 debug!("Unassigned read in VRAM: {:X}", addr);
-                0
+                0xFF
             }
         }
     }

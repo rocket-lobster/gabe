@@ -93,7 +93,10 @@ impl Memory for Timer {
 
     fn write_byte(&mut self, addr: u16, val: u8) {
         match addr {
-            0xFF04 => self.div = 0x0,
+            0xFF04 => {
+                self.div = 0x0;
+                self.div_cycles = 0;
+            }
             0xFF05 => self.tima = val,
             0xFF06 => self.tma = val,
             0xFF07 => self.tac = val,
