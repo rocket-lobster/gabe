@@ -97,7 +97,7 @@ impl Registers {
     /// A is the hi 8-bits and F is the lo 8-bits
     fn set_af(&mut self, val: u16) {
         self.a = (val >> 8) as u8;
-        self.f = (val & 0xFF) as u8;
+        self.f = (val & 0xF0) as u8;
     }
 
     /// Sets a 16-bit value where
@@ -189,6 +189,7 @@ pub struct Cpu {
     pub ime: bool,
     pub next_ime: bool,
     pub halted: bool,
+    pub stopped: bool,
 }
 
 impl fmt::Display for Cpu {
@@ -241,6 +242,7 @@ impl Cpu {
             ime: false,
             next_ime: false,
             halted: false,
+            stopped: false,
         }
     }
 
@@ -322,6 +324,14 @@ impl Cpu {
     /// appropriate function, and executes the functionality.
     /// Returns the number of cycles executed.
     pub fn tick(&mut self, mmu: &mut mmu::Mmu) -> usize {
+        if self.stopped {
+            // Reset DIV
+            mmu.write_byte(0xFF04, 0x0);
+            if !(mmu.read_byte(0xFF00) | 0xF0) != 0x0 {
+                self.stopped = false;
+            } 
+            return OPCODE_TABLE[0];
+        }
         if self.ime || self.halted {
             // If CPU is halted or IME is enabled, check if there's any interrupts to execute
             if let Some(c) = self.check_interrupts(mmu) {
@@ -357,13 +367,21 @@ impl Cpu {
             0x76 => self.halted = true,
 
             // STOP
-            0x10 => unimplemented!("STOP not implemented"),
+            0x10 => self.stopped = true,
 
             // CCF
-            0x3F => self.reg.set_flag(Flag::C, !self.reg.get_flag(Flag::C)),
+            0x3F => {
+                self.reg.set_flag(Flag::C, !self.reg.get_flag(Flag::C));
+                self.reg.set_flag(Flag::H, false);
+                self.reg.set_flag(Flag::N, false);
+            }
 
             // SCF
-            0x37 => self.reg.set_flag(Flag::C, true),
+            0x37 => {
+                self.reg.set_flag(Flag::C, true);
+                self.reg.set_flag(Flag::H, false);
+                self.reg.set_flag(Flag::N, false);
+            }
 
             // IME
             0xF3 => self.next_ime = false,
@@ -540,9 +558,21 @@ impl Cpu {
                 let v = self.imm_word(mmu);
                 mmu.write_word(v, self.reg.sp);
             }
-
+            
             // LD SP,HL
             0xF9 => self.reg.sp = self.reg.get_hl(),
+
+            // LD HL,SP+r8
+            0xF8 => {
+                let v = (i16::from(self.imm(mmu) as i8)) as u16;
+                self.reg.set_flag(Flag::Z, false);
+                self.reg.set_flag(Flag::N, false);
+                self.reg
+                    .set_flag(Flag::H, (self.reg.sp & 0x000F) + (v & 0x000F) > 0x000F);
+                self.reg
+                    .set_flag(Flag::C, (self.reg.sp & 0x00FF) + (v & 0x00FF) > 0x00FF);
+                self.reg.set_hl(self.reg.sp.wrapping_add(v));
+            }
 
             // ADD A,r8
             0x80 => self.add(self.reg.b),
@@ -955,28 +985,28 @@ impl Cpu {
 
             // RLCA
             0x07 => {
-                self.rlc(self.reg.a);
+                self.reg.a = self.rlc(self.reg.a);
                 // Flag is always reset in this instruction
                 self.reg.set_flag(Flag::Z, false);
             }
 
             // RLA
             0x17 => {
-                self.rl(self.reg.a);
+                self.reg.a = self.rl(self.reg.a);
                 // Flag is always reset in this instruction
                 self.reg.set_flag(Flag::Z, false);
             }
 
             // RRCA
             0x0F => {
-                self.rrc(self.reg.a);
+                self.reg.a = self.rrc(self.reg.a);
                 // Flag is always reset in this instruction
                 self.reg.set_flag(Flag::Z, false);
             }
 
             // RRA
             0x1F => {
-                self.rr(self.reg.a);
+                self.reg.a = self.rr(self.reg.a);
                 // Flag is always reset in this instruction
                 self.reg.set_flag(Flag::Z, false);
             }
@@ -1602,9 +1632,9 @@ impl Cpu {
         let hl = self.reg.get_hl();
         self.reg.set_flag(Flag::N, false);
         self.reg
-            .set_flag(Flag::H, (r & 0x000F) + (hl & 0x000F) > 0x000F);
+            .set_flag(Flag::H, (r & 0x0FFF) + (hl & 0x0FFF) > 0x0FFF);
         self.reg
-            .set_flag(Flag::C, (r & 0x00FF) + (hl & 0x00FF) > 0x00FF);
+            .set_flag(Flag::C, (r as u32 & 0xFFFF) + (hl as u32 & 0xFFFF) > 0xFFFF);
         self.reg.set_hl(hl.wrapping_add(r));
     }
 
@@ -1909,28 +1939,32 @@ impl Cpu {
 
     fn daa(&mut self) -> u8 {
         // Take the contents of A, reinterpret bits into BCD, based on the state of the flags
-        let mut value: u16 = self.reg.a as u16;
-        let mut correction: u8 = 0x0;
-        if self.reg.get_flag(Flag::H) || ((self.reg.a & 0xF) > 9) {
-            // Apply correction value to lower nibble
-            correction |= 0x6;
-        }
-        if self.reg.get_flag(Flag::C) || ((self.reg.a >> 4) & 0xF) > 9 {
-            // Apply correction value to upper nibble
-            correction |= 0x60;
-            self.reg.set_flag(Flag::C, true);
-        } else {
-            self.reg.set_flag(Flag::C, false);
-        }
-
+        let mut value: u32 = self.reg.a as u32;
         if self.reg.get_flag(Flag::N) {
-            // We did a subtraction, so 2's compliment the correction
-            correction = (!correction) + 1;
+            // Previous op was SUB, subtract 6 from each nibble if needed
+            if self.reg.get_flag(Flag::H) {
+                value = value.wrapping_sub(6) & 0xFF;
+            }
+            if self.reg.get_flag(Flag::C) {
+                value = value.wrapping_sub(0x60);
+            }
+        } else {
+            // Add 6 to each nibble if needed
+            if self.reg.get_flag(Flag::H) || (value & 0xF) > 9 {
+                value = value.wrapping_add(0x06);
+            }
+            if self.reg.get_flag(Flag::C) || value > 0x9F {
+                value = value.wrapping_add(0x60);
+            }
         }
-        value += correction as u16;
-        value &= 0xff;
-        self.reg.set_flag(Flag::Z, value == 0);
+        self.reg.set_flag(Flag::Z, false);
         self.reg.set_flag(Flag::H, false);
+        if (value & 0x100) == 0x100 {
+            // Don't reset if false
+            self.reg.set_flag(Flag::C, true);
+        }
+        value &= 0xFF;
+        self.reg.set_flag(Flag::Z, value == 0);
         value as u8
     }
 }
