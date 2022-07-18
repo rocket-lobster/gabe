@@ -558,87 +558,88 @@ impl Vram {
 
                 // Check x-pos for this OBJ
                 if x_pos > p as u8 && x_pos <= p as u8 + 8 {
+                    let tile_pixel_x = p as u8 + 8 - x_pos;
+                    let mut tile_pixel_y = (self.ly as u8 + 16).wrapping_sub(y_pos);
+
+                    // Parse attributes
+                    let bg_prio = (attribs & 0b1000_0000) != 0;
+                    let y_flip = (attribs & 0b0100_0000) != 0;
+                    let x_flip = (attribs & 0b0010_0000) != 0;
+                    let obp1 = (attribs & 0b0001_0000) != 0;
+
+                    // Get the location of the tile data, starting at 0x8000
+                    // Internally, we start at 0x0000
+                    let tile_data_base = if self.lcdc.obj_size_select {
+                        // 8x16
+                        if (tile_pixel_y > 7 && !y_flip) || (tile_pixel_y <= 7 && y_flip) {
+                            // Bottom tile
+                            (tile_idx | 0x01) as u16 * 16
+                        } else {
+                            // Top tile
+                            (tile_idx & 0xFE) as u16 * 16
+                        }
+                    } else {
+                        tile_idx as u16 * 16
+                    };
+
+                    if y_flip {
+                        // Invert the bits and mask the lower 3 to get the new line offset
+                        tile_pixel_y = !tile_pixel_y & 0x7;
+                    } else {
+                        // Just mask the lower 3 bits to contain it within the given tile
+                        tile_pixel_y &= 0x7
+                    }
+
+                    // Each set of 2 bytes represets the least and most signficant bits in the tile's color number, respectively,
+                    // for each line of 8 pixels in the tile.
+                    // Byte 0-1 is first line, Byte 2-3 is second line, etc.
+                    // Offset the line we're looking for by applying the tile pixel y-offset, and grab both color bytes
+                    let tile_colors_lsb =
+                        self.memory[(tile_data_base + (tile_pixel_y as u16 * 2)) as usize];
+                    let tile_colors_msb =
+                        self.memory[(tile_data_base + (tile_pixel_y as u16 * 2) + 1) as usize];
+
+                    // Which pixel in the line we shift over changes on the status of x_flip
+                    let pixel_shift = if x_flip {
+                        tile_pixel_x
+                    } else {
+                        !tile_pixel_x & 0x7
+                    };
+
+                    let tile_color_number = (((tile_colors_msb >> pixel_shift) & 0x1) << 1)
+                        | ((tile_colors_lsb >> pixel_shift) & 0x1);
+
+                    let pixel_shade = if obp1 {
+                        match tile_color_number {
+                            0 => continue, // Color 0 is transparent, ignore
+                            1 => self.obp1.color1,
+                            2 => self.obp1.color2,
+                            3 => self.obp1.color3,
+                            _ => panic!("Incorrect color number selection logic."),
+                        }
+                    } else {
+                        match tile_color_number {
+                            0 => continue, // Color 0 is transparent, ignore
+                            1 => self.obp0.color1,
+                            2 => self.obp0.color2,
+                            3 => self.obp0.color3,
+                            _ => panic!("Incorrect color number selection logic."),
+                        }
+                    };
+
                     if x_pos <= lowest_x {
                         // This OBJ has higher priority than any previous one
                         lowest_x = x_pos;
-                        let tile_pixel_x = p as u8 + 8 - x_pos;
-                        let mut tile_pixel_y = (self.ly as u8 + 16).wrapping_sub(y_pos);
-                        
-                        // Parse attributes
-                        let bg_prio = (attribs & 0b1000_0000) != 0;
-                        let y_flip = (attribs & 0b0100_0000) != 0;
-                        let x_flip = (attribs & 0b0010_0000) != 0;
-                        let obp1 = (attribs & 0b0001_0000) != 0;
-
-                        // Get the location of the tile data, starting at 0x8000
-                        // Internally, we start at 0x0000
-                        let tile_data_base = if self.lcdc.obj_size_select {
-                            // 8x16
-                            if (tile_pixel_y > 7 && !y_flip) || (tile_pixel_y <= 7 && y_flip) {
-                                // Bottom tile
-                                (tile_idx | 0x01) as u16 * 16
-                            } else {
-                                // Top tile
-                                (tile_idx & 0xFE) as u16 * 16
-                            }
-                        } else {
-                            tile_idx as u16 * 16
-                        };                        
-
-                        if y_flip {
-                            // Invert the bits and mask the lower 3 to get the new line offset
-                            tile_pixel_y = !tile_pixel_y & 0x7;
-                        } else {
-                            // Just mask the lower 3 bits to contain it within the given tile
-                            tile_pixel_y &= 0x7
-                        }
-
-                        // Each set of 2 bytes represets the least and most signficant bits in the tile's color number, respectively,
-                        // for each line of 8 pixels in the tile.
-                        // Byte 0-1 is first line, Byte 2-3 is second line, etc.
-                        // Offset the line we're looking for by applying the tile pixel y-offset, and grab both color bytes
-                        let tile_colors_lsb =
-                            self.memory[(tile_data_base + (tile_pixel_y as u16 * 2)) as usize];
-                        let tile_colors_msb =
-                            self.memory[(tile_data_base + (tile_pixel_y as u16 * 2) + 1) as usize];
-
-                        // Which pixel in the line we shift over changes on the status of x_flip
-                        let pixel_shift = if x_flip {
-                            tile_pixel_x
-                        } else {
-                            !tile_pixel_x & 0x7
-                        };
-
-                        let tile_color_number = (((tile_colors_msb >> pixel_shift) & 0x1) << 1)
-                            | ((tile_colors_lsb >> pixel_shift) & 0x1);
-
-                        let pixel_shade = if obp1 {
-                            match tile_color_number {
-                                0 => continue, // Color 0 is transparent, ignore
-                                1 => self.obp1.color1,
-                                2 => self.obp1.color2,
-                                3 => self.obp1.color3,
-                                _ => panic!("Incorrect color number selection logic."),
-                            }
-                        } else {
-                            match tile_color_number {
-                                0 => continue, // Color 0 is transparent, ignore
-                                1 => self.obp0.color1,
-                                2 => self.obp0.color2,
-                                3 => self.obp0.color3,
-                                _ => panic!("Incorrect color number selection logic."),
-                            }
-                        };
-
-                        let pixel_rgb = Self::shade_to_rgb_u8(&pixel_shade);
-
-                        self.screen_data[((self.ly as usize * (SCREEN_WIDTH * 3)) + (p * 3))] =
-                            pixel_rgb.0;
-                        self.screen_data[((self.ly as usize * (SCREEN_WIDTH * 3)) + (p * 3) + 1)] =
-                            pixel_rgb.1;
-                        self.screen_data[((self.ly as usize * (SCREEN_WIDTH * 3)) + (p * 3) + 2)] =
-                            pixel_rgb.2;
                     }
+
+                    let pixel_rgb = Self::shade_to_rgb_u8(&pixel_shade);
+                    
+                    self.screen_data[((self.ly as usize * (SCREEN_WIDTH * 3)) + (p * 3))] =
+                        pixel_rgb.0;
+                    self.screen_data[((self.ly as usize * (SCREEN_WIDTH * 3)) + (p * 3) + 1)] =
+                        pixel_rgb.1;
+                    self.screen_data[((self.ly as usize * (SCREEN_WIDTH * 3)) + (p * 3) + 2)] =
+                        pixel_rgb.2;
                 }
             }
         }

@@ -87,8 +87,8 @@ fn main() {
 
     let mut window = Window::new(
         "Gabe Emulator",
-        160,
-        144,
+        160*4,
+        144*4,
         WindowOptions {
             resize: true,
             scale_mode: ScaleMode::AspectRatioStretch,
