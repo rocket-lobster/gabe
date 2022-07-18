@@ -442,15 +442,15 @@ impl Vram {
         for p in 0..SCREEN_WIDTH {
             // Get the tile data index and pixel offsets, either from the window map or the background map
             let (mut tile_data_base, tile_pixel_x, tile_pixel_y) = if self.lcdc.window_enable
-                && p as u8 >= self.window_coords.0 - 7
+                && p as u8 >= self.window_coords.0.saturating_sub(7)
                 && self.ly >= self.window_coords.1
             {
                 // We are inside the window, so grab window tiles
-                let tile_x: u8 = (p as u8 - self.window_coords.0 - 7) / 8;
+                let tile_x: u8 = (p as u8 - self.window_coords.0.saturating_sub(7)) / 8;
                 let tile_y: u8 = (self.ly - self.window_coords.1) / 8;
 
                 // Get the pixel coordinates for the tile
-                let tile_pixel_x: u8 = (p as u8 - self.window_coords.0 - 7) % 8;
+                let tile_pixel_x: u8 = (p as u8 - self.window_coords.0.saturating_sub(7)) % 8;
                 let tile_pixel_y: u8 = (self.ly - self.window_coords.1) % 8;
 
                 // Get the tile map offset from what tile we are using
@@ -562,7 +562,7 @@ impl Vram {
                         // This OBJ has higher priority than any previous one
                         lowest_x = x_pos;
                         let tile_pixel_x = p as u8 + 8 - x_pos;
-                        let mut tile_pixel_y = self.ly as u8 + 16 - y_pos;
+                        let mut tile_pixel_y = (self.ly as u8 + 16).wrapping_sub(y_pos);
                         
                         // Parse attributes
                         let bg_prio = (attribs & 0b1000_0000) != 0;
@@ -576,10 +576,10 @@ impl Vram {
                             // 8x16
                             if (tile_pixel_y > 7 && !y_flip) || (tile_pixel_y <= 7 && y_flip) {
                                 // Bottom tile
-                                ((tile_idx | 0x01) * 16) as u16
+                                (tile_idx | 0x01) as u16 * 16
                             } else {
                                 // Top tile
-                                ((tile_idx & 0xFE) * 16) as u16
+                                (tile_idx & 0xFE) as u16 * 16
                             }
                         } else {
                             tile_idx as u16 * 16

@@ -38,7 +38,7 @@ impl Mbc1 {
             0x3 => 0x04,      // 32 KB
             _ => panic!("Provided RAM Size unsupported for MBC1."),
         };
-        let ram: Vec<u8> = vec![0; (0x2000 * rom_bank_count as u16) as usize];
+        let ram: Vec<u8> = vec![0; (0x2000u32 * rom_bank_count as u32) as usize];
         Mbc1 {
             rom: rom.into_boxed_slice(),
             ram: ram.into_boxed_slice(),
@@ -61,7 +61,7 @@ impl Memory for Mbc1 {
                     // Using Mode 1, so bits 5 and 6 are used to select the location of the lower bank
                     // e.g. if we are using bank 0x3A = 0b011_1010, mask bits 4-0 off and use the resulting 
                     // value to find the bank for 0x0000-0x3FFF, which would be 0b011_1010 & 0b110_0000 = 0b010_0000 = bank 0x20
-                    self.rom[(addr + (0x4000 * (self.rom_bank & 0x60) as u16)) as usize]
+                    self.rom[(addr as u32 + (0x4000 as u32 * (self.rom_bank & 0x60) as u32)) as usize]
                 } else {
                     self.rom[addr as usize]
                 }
@@ -69,12 +69,12 @@ impl Memory for Mbc1 {
             // Offset the addr to be relative to the bank, then add the offset based of the rom_bank
             // Allows this range to technically be a cloned area of bank 0 in some edge cases where rom_bank is 0
             0x4000..=0x7FFF => {
-                self.rom[((addr - 0x4000) + (0x4000 * self.rom_bank as u16)) as usize]
+                self.rom[((addr - 0x4000) as u32 + (0x4000u32 * self.rom_bank as u32)) as usize]
             }
             0xA000..=0xBFFF => {
                 if self.ram_enabled {
                     if self.mode1_enabled {
-                        self.ram[((addr - 0xA000) + (0x2000 * self.ram_bank as u16)) as usize] 
+                        self.ram[((addr - 0xA000) as u32 + (0x2000u32 * self.ram_bank as u32)) as usize] 
                     } else {
                         // Without Mode 1, RAM always uses bank 0.
                         self.ram[(addr - 0xA000) as usize]
@@ -131,7 +131,7 @@ impl Memory for Mbc1 {
             0xA000..=0xBFFF => {
                 if self.ram_enabled {
                     if self.mode1_enabled {
-                        self.ram[((addr - 0xA000) + (0x2000 * self.ram_bank as u16)) as usize] = val;
+                        self.ram[((addr - 0xA000) as u32 + (0x2000u32 * self.ram_bank as u32)) as usize] = val;
                     } else {
                         // Without Mode 1, RAM always uses bank 0.
                         self.ram[(addr - 0xA000) as usize] = val;
