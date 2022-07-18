@@ -169,8 +169,8 @@ fn get_key_states(window: &Window) -> Vec<GbKeys> {
     let mut ret: Vec<GbKeys> = vec![];
     window.get_keys().iter().for_each(|key| {
         match key {
-            Key::Z => ret.push(GbKeys::A),
-            Key::X => ret.push(GbKeys::B),
+            Key::X => ret.push(GbKeys::A),
+            Key::Z => ret.push(GbKeys::B),
             Key::Enter => ret.push(GbKeys::Start),
             Key::Backspace => ret.push(GbKeys::Select),
             Key::Up => ret.push(GbKeys::Up),
