@@ -692,7 +692,7 @@ impl Memory for Vram {
             0xFF4A => self.window_coords.1,
             0xFF4B => self.window_coords.0,
             _ => {
-                debug!("Unassigned read in VRAM: {:X}", addr);
+                error!("Unassigned read in VRAM: {:X}", addr);
                 0xFF
             }
         }
@@ -726,7 +726,7 @@ impl Memory for Vram {
             0xFF4A => self.window_coords.1 = val,
             0xFF4B => self.window_coords.0 = val,
             _ => {
-                debug!("Unassigned write in VRAM: {:X}", addr);
+                error!("Unassigned write in VRAM: {:X}", addr);
                 ()
             }
         }

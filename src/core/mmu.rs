@@ -62,8 +62,14 @@ impl Mmu {
         let ram_size = rom_data[0x149];
         debug!("Sizes:\t ROM: {:02X}\tRAM: {:02X}", rom_size, ram_size);
         let cart: Box<dyn Memory> = match rom_data[0x147] {
-            0x00 => Box::new(Mbc0::power_on(rom_data)),
-            0x01 | 0x02 | 0x03 => Box::new(Mbc1::power_on(rom_data, rom_size, ram_size)),
+            0x00 => {
+                debug!("MCB Type: MBC0/No MBC.");
+                Box::new(Mbc0::power_on(rom_data))
+            }
+            0x01 | 0x02 | 0x03 => {
+                debug!("MCB Type: MBC1 w/ RAM Size {:02X}", ram_size);
+                Box::new(Mbc1::power_on(rom_data, rom_size, ram_size))
+            }
             _ => unimplemented!("MBC value {:02X} not supported!", rom_data[0x147]),
         };
         let mmu = Mmu {
@@ -133,14 +139,14 @@ impl Mmu {
     /// data visible to MMU, so any non-selected banks or block-internal data not memory-mapped
     /// will not be returned.
     pub fn get_memory_range(&self, range: std::ops::Range<usize>) -> Vec<u8> {
-            let mut vec: Vec<u8> = Vec::new();
-            for addr in range.into_iter() {
-                // Check the bounds of u16
-                if addr <= u16::MAX as usize {
-                    vec.push(self.read_byte(addr as u16));
-                }
+        let mut vec: Vec<u8> = Vec::new();
+        for addr in range.into_iter() {
+            // Check the bounds of u16
+            if addr <= u16::MAX as usize {
+                vec.push(self.read_byte(addr as u16));
             }
-            vec 
+        }
+        vec
     }
 
     /// Run the DMA for the remaining
@@ -172,7 +178,7 @@ impl Mmu {
                     let src_addr = addr + i as u16;
                     if src_addr & 0xFF >= 0xA0 {
                         // DMA complete, return Stopped
-                        debug!("DMA Transfer complete.");
+                        trace!("DMA Transfer complete.");
                         return DmaState::Stopped;
                     } else {
                         let val = match src_addr {
@@ -209,7 +215,10 @@ impl Mmu {
 impl Memory for Mmu {
     fn read_byte(&self, addr: u16) -> u8 {
         if self.dma_state != DmaState::Stopped && (addr < 0xFF80 || addr > 0xFFFE) {
-            warn!("CPU attempting read at {:4X} during DMA, returning 0xFF", addr);
+            warn!(
+                "CPU attempting read at {:4X} during DMA, returning 0xFF",
+                addr
+            );
             0xFF
         } else {
             match addr {
@@ -247,7 +256,7 @@ impl Memory for Mmu {
                 0xFF0F => self.intf = val,
                 0xFF10..=0xFF2F => self.apu.write_byte(addr, val),
                 0xFF46 => {
-                    debug!("Beginning DMA Transfer at {:2X}00...", val);
+                    trace!("Beginning DMA Transfer at {:2X}00...", val);
                     self.dma_state = DmaState::Starting(val);
                     self.previous_dma = val;
                 }
