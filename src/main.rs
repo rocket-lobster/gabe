@@ -6,7 +6,11 @@ mod debugger;
 
 use crate::core::gb::{Gameboy, GbKeys};
 
-use std::{path::Path, io::{Read, Write}, fs::File};
+use std::{
+    fs::File,
+    io::{Read, Write},
+    path::Path,
+};
 
 use clap::{App, Arg};
 use debugger::{Debugger, DebuggerState};
@@ -21,8 +25,9 @@ struct Emulator {
 impl Emulator {
     pub fn power_on(path: impl AsRef<Path>, debug: bool) -> Self {
         let debugger = Debugger::new(debug);
+        let (gb, audio_buffer) = Gameboy::power_on(path, 0).expect("Path invalid");
         Emulator {
-            gb: Gameboy::power_on(path).expect("Path invalid"),
+            gb,
             debugger,
             current_frame: vec![0; 160 * 144 * 3].into_boxed_slice(),
         }
@@ -69,7 +74,7 @@ fn main() {
         .arg(
             Arg::with_name("disassemble")
                 .help("Creates a disassembly output file from the given ROM instead of running.")
-                .long("disassemble")
+                .long("disassemble"),
         )
         .get_matches();
     let rom_file = matches.value_of("ROM").unwrap();
@@ -79,7 +84,10 @@ fn main() {
     if do_disassemble {
         println!("Generating disassembled file from {}", rom_file);
         disassemble_to_file(rom_file).expect("Error with I/O, exiting...");
-        println!("Diassembly of {} completed successfully! Exiting.", rom_file);
+        println!(
+            "Diassembly of {} completed successfully! Exiting.",
+            rom_file
+        );
         return;
     }
 
@@ -87,8 +95,8 @@ fn main() {
 
     let mut window = Window::new(
         "Gabe Emulator",
-        160*4,
-        144*4,
+        160 * 4,
+        144 * 4,
         WindowOptions {
             resize: true,
             scale_mode: ScaleMode::AspectRatioStretch,
@@ -102,7 +110,7 @@ fn main() {
         window.limit_update_rate(None);
     } else {
         // 60 fps framelimit
-        window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
+        window.limit_update_rate(Some(std::time::Duration::from_micros(16742)));
     }
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
@@ -120,7 +128,7 @@ fn main() {
                 }
                 DebuggerState::Stopping => {
                     emu.debugger.quit();
-                    window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
+                    window.limit_update_rate(Some(std::time::Duration::from_micros(16742)));
                 }
             }
             window.update();
@@ -152,7 +160,6 @@ fn main() {
     }
 }
 
-
 fn disassemble_to_file(path: impl AsRef<Path>) -> Result<(), std::io::Error> {
     let mut in_file = File::open(path.as_ref())?;
     let mut out_file = File::create("output.asm")?;
@@ -163,22 +170,20 @@ fn disassemble_to_file(path: impl AsRef<Path>) -> Result<(), std::io::Error> {
         out_file.write_all(format!("0x{:04X}: {}\n", p, s).as_bytes())?;
     }
     Ok(())
-} 
+}
 
 fn get_key_states(window: &Window) -> Vec<GbKeys> {
     let mut ret: Vec<GbKeys> = vec![];
-    window.get_keys().iter().for_each(|key| {
-        match key {
-            Key::X => ret.push(GbKeys::A),
-            Key::Z => ret.push(GbKeys::B),
-            Key::Enter => ret.push(GbKeys::Start),
-            Key::Backspace => ret.push(GbKeys::Select),
-            Key::Up => ret.push(GbKeys::Up),
-            Key::Down => ret.push(GbKeys::Down),
-            Key::Left => ret.push(GbKeys::Left),
-            Key::Right => ret.push(GbKeys::Right),
-            _ => (),
-        }
+    window.get_keys().iter().for_each(|key| match key {
+        Key::X => ret.push(GbKeys::A),
+        Key::Z => ret.push(GbKeys::B),
+        Key::Enter => ret.push(GbKeys::Start),
+        Key::Backspace => ret.push(GbKeys::Select),
+        Key::Up => ret.push(GbKeys::Up),
+        Key::Down => ret.push(GbKeys::Down),
+        Key::Left => ret.push(GbKeys::Left),
+        Key::Right => ret.push(GbKeys::Right),
+        _ => (),
     });
-        ret
+    ret
 }

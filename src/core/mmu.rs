@@ -3,7 +3,7 @@ use std::io::Read;
 use std::path::Path;
 use std::{io, panic};
 
-use super::apu::Apu;
+use super::apu::{Apu, AudioBuffer};
 use super::gb::GbKeys;
 use super::interrupt::InterruptKind;
 use super::joypad::Joypad;
@@ -53,7 +53,7 @@ impl Mmu {
     /// Initializes the MMU with the given ROM path.
     /// Opens the given file and reads cartridge header information to find
     /// the MBC type.
-    pub fn power_on(path: impl AsRef<Path>) -> io::Result<Self> {
+    pub fn power_on(path: impl AsRef<Path>, sample_rate: u32) -> io::Result<(Self, AudioBuffer)> {
         let mut f = File::open(path.as_ref())?;
         let mut rom_data = Vec::new();
         f.read_to_end(&mut rom_data)?;
@@ -72,9 +72,10 @@ impl Mmu {
             }
             _ => unimplemented!("MBC value {:02X} not supported!", rom_data[0x147]),
         };
+        let (apu, audio_buffer) = Apu::power_on(sample_rate);
         let mmu = Mmu {
             cart,
-            apu: Apu::power_on(),
+            apu,
             vram: Vram::power_on(),
             wram: Wram::power_on(),
             timer: Timer::power_on(),
@@ -87,7 +88,7 @@ impl Mmu {
             previous_dma: 0xFF,
         };
 
-        Ok(mmu)
+        Ok((mmu, audio_buffer))
     }
 
     /// Updates all memory components to align with the number of cycles
@@ -101,6 +102,8 @@ impl Mmu {
             self.dma_state = self.run_dma(cycles);
         }
         // Update APU
+        self.apu.update(cycles);
+
         // Update Joypad
         if let Some(i) = self.joypad.update(keys_pressed) {
             self.request_interrupt(i);
@@ -140,7 +143,7 @@ impl Mmu {
     /// will not be returned.
     pub fn get_memory_range(&self, range: std::ops::Range<usize>) -> Vec<u8> {
         let mut vec: Vec<u8> = Vec::new();
-        for addr in range.into_iter() {
+        for addr in range {
             // Check the bounds of u16
             if addr <= u16::MAX as usize {
                 vec.push(self.read_byte(addr as u16));
@@ -208,13 +211,12 @@ impl Mmu {
             "Memory Write at unassigned location {:4X} of value {:2X}",
             addr, val
         );
-        ()
     }
 }
 
 impl Memory for Mmu {
     fn read_byte(&self, addr: u16) -> u8 {
-        if self.dma_state != DmaState::Stopped && (addr < 0xFF80 || addr > 0xFFFE) {
+        if self.dma_state != DmaState::Stopped && !(0xFF80..=0xFFFE).contains(&addr) {
             warn!(
                 "CPU attempting read at {:4X} during DMA, returning 0xFF",
                 addr
@@ -231,7 +233,7 @@ impl Memory for Mmu {
                 0xFF01..=0xFF02 => self.serial.read_byte(addr),
                 0xFF04..=0xFF07 => self.timer.read_byte(addr),
                 0xFF0F => self.intf,
-                0xFF10..=0xFF2F => self.apu.read_byte(addr),
+                0xFF10..=0xFF3F => self.apu.read_byte(addr),
                 0xFF46 => self.previous_dma,
                 0xFF40..=0xFF6F => self.vram.read_byte(addr),
                 0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize],
@@ -241,7 +243,7 @@ impl Memory for Mmu {
         }
     }
     fn write_byte(&mut self, addr: u16, val: u8) {
-        if self.dma_state != DmaState::Stopped && (addr < 0xFF80 || addr > 0xFFFE) {
+        if self.dma_state != DmaState::Stopped && !(0xFF80..=0xFFFE).contains(&addr) {
             warn!("CPU attempting write at {:4X} during DMA, ignoring.", addr);
         } else {
             match addr {
@@ -254,7 +256,7 @@ impl Memory for Mmu {
                 0xFF01..=0xFF02 => self.serial.write_byte(addr, val),
                 0xFF04..=0xFF07 => self.timer.write_byte(addr, val),
                 0xFF0F => self.intf = val,
-                0xFF10..=0xFF2F => self.apu.write_byte(addr, val),
+                0xFF10..=0xFF3F => self.apu.write_byte(addr, val),
                 0xFF46 => {
                     trace!("Beginning DMA Transfer at {:2X}00...", val);
                     self.dma_state = DmaState::Starting(val);

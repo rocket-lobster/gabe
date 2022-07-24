@@ -1,3 +1,4 @@
+use super::apu::AudioBuffer;
 use super::cpu;
 use super::memory::Memory;
 use super::mmu;
@@ -22,7 +23,7 @@ pub enum GbKeys {
     A,
     B,
     Start,
-    Select
+    Select,
 }
 
 pub struct GbDebug {
@@ -38,12 +39,16 @@ pub struct GbDebug {
 impl Gameboy {
     /// Initializes Gameboy state to begin emulation on provided
     /// binary file
-    pub fn power_on(path: impl AsRef<Path>) -> io::Result<Self> {
-        Ok(Gameboy {
-            cpu: cpu::Cpu::power_on(),
-            mmu: mmu::Mmu::power_on(path)?,
-            total_cycles: 0,
-        })
+    pub fn power_on(path: impl AsRef<Path>, sample_rate: u32) -> io::Result<(Self, AudioBuffer)> {
+        let (mmu, audio_buffer) = mmu::Mmu::power_on(path, sample_rate)?;
+        Ok((
+            Gameboy {
+                cpu: cpu::Cpu::power_on(),
+                mmu,
+                total_cycles: 0,
+            },
+            audio_buffer,
+        ))
     }
 
     /// Advances the Gameboy internal state until a frame is completed.
