@@ -1,4 +1,4 @@
-use super::memory::Memory;
+use super::mmu::Memory;
 
 struct SerialControl {
     /// Bit 7 - Transfer Start Flag (0=No Transfer, 1=Start)
@@ -30,7 +30,7 @@ impl Memory for SerialControl {
 pub struct Serial {
     /// Serial transfer data: 8 Bits of data to be read/written
     sb: u8,
-    /// 
+    ///
     sc: SerialControl,
 }
 

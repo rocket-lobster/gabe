@@ -1,7 +1,7 @@
 use blip_buf::BlipBuf;
 use std::sync::{Arc, Mutex};
 
-use super::memory::Memory;
+use super::mmu::Memory;
 
 struct SquareChannel1 {
     /// Bit 6-4 - Sweep Time
@@ -55,7 +55,7 @@ struct SquareChannel1 {
     /// Volume Envelope: 7
     /// Sweep: 2, 6
     frame_cycles: usize,
-    
+
     /// The current location in the wave pattern given by wave_pattern
     wave_index: usize,
 
@@ -105,7 +105,7 @@ impl SquareChannel1 {
                 0x1 => 0b1000_0001, // 25%
                 0x2 => 0b1000_0111, // 50%
                 0x3 => 0b0111_1110, // 75%
-                _ => unreachable!()
+                _ => unreachable!(),
             };
             // Get the current volume based on the volume envelope state
             // Set amplitude to 0 if volume is zero or the channel hasn't been triggered
@@ -229,7 +229,7 @@ pub struct Apu {
     sample_rate: u32,
 
     /// The current cycle count in CPU cycles at 4.19 MHz
-    /// Used to step the frame sequencer and determine 
+    /// Used to step the frame sequencer and determine
     /// sound sample generation
     /// Wraps every 8192 cycles back to zero, aligning with a full set
     /// of frame sequencer clocks.

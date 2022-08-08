@@ -4,12 +4,11 @@ use std::path::Path;
 use std::{io, panic};
 
 use super::apu::{Apu, AudioBuffer};
+use super::cartridge::mbc0::Mbc0;
+use super::cartridge::mbc1::Mbc1;
+use super::cartridge::Cartridge;
 use super::gb::GbKeys;
-use super::interrupt::InterruptKind;
 use super::joypad::Joypad;
-use super::mbc0::Mbc0;
-use super::mbc1::Mbc1;
-use super::memory::Memory;
 use super::serial::Serial;
 use super::timer::Timer;
 use super::vram::{FrameData, Vram};
@@ -29,13 +28,54 @@ enum DmaState {
     Running(u16),
 }
 
+/// Enumeration of the different possible Gameboy interrupts.
+/// The values of each interrupt represent the bitmask when enabling and
+/// requesting interrupts of the IE register and IF register respectively
+///
+/// Order represents the priority of interrupt execution when multiple
+/// interrupts are enabled and requested at once.
+#[derive(PartialEq)]
+pub enum InterruptKind {
+    /// Vertical Blank interrupt whenever the LCD enters the V-Blank period.
+    /// (INT 0x40)
+    VBlank = 0b0000_0001,
+    /// LCD STAT interrupts, such as when entering H-blank, V-blank, LYC=LY,
+    /// and when OAM is being read
+    /// (INT 0x48)
+    LcdStat = 0b0000_0010,
+    /// Timer interrupt for whenever the TIMA register wraps
+    /// (INT 0x50)
+    Timer = 0b0000_0100,
+    /// Serial Port-related interrupt
+    /// (INT 0x58)
+    Serial = 0b0000_1000,
+    /// Joypad Input interrupt for when the joypad registers are set from input
+    /// (INT 0x60)
+    Joypad = 0b0001_0000,
+}
+
+/// Trait representing a piece of memory in the system that can have bytes read and written to.
+/// write/read words are just composed from write/read byte, so implementors only need to implement
+/// `read_byte` and `write_byte`.
+pub trait Memory {
+    fn read_byte(&self, addr: u16) -> u8;
+    fn read_word(&self, addr: u16) -> u16 {
+        (u16::from(self.read_byte(addr))) | (u16::from(self.read_byte(addr + 1)) << 8)
+    }
+    fn write_byte(&mut self, addr: u16, val: u8);
+    fn write_word(&mut self, addr: u16, val: u16) {
+        self.write_byte(addr, (val & 0xFF) as u8);
+        self.write_byte(addr + 1, (val >> 8) as u8);
+    }
+}
+
 /// The state of all Gameboy memory, both internal memory and external cartridge memory
 ///
 /// This structure is used whenever the CPU needs to write into or read from memory,
 /// and then each block provides the services necessary when updated. MMU only handles
 /// reading and writing into each block, no logic is performed otherwise.
 pub struct Mmu {
-    cart: Box<dyn Memory>,
+    cart: Box<dyn Cartridge>,
     apu: Apu,
     vram: Vram,
     wram: Wram,
@@ -61,14 +101,22 @@ impl Mmu {
         let rom_size = rom_data[0x148];
         let ram_size = rom_data[0x149];
         debug!("Sizes:\t ROM: {:02X}\tRAM: {:02X}", rom_size, ram_size);
-        let cart: Box<dyn Memory> = match rom_data[0x147] {
+        let cart: Box<dyn Cartridge> = match rom_data[0x147] {
             0x00 => {
-                debug!("MCB Type: MBC0/No MBC.");
+                debug!("MBC Type: MBC0/No MBC.");
                 Box::new(Mbc0::power_on(rom_data))
             }
-            0x01 | 0x02 | 0x03 => {
-                debug!("MCB Type: MBC1 w/ RAM Size {:02X}", ram_size);
-                Box::new(Mbc1::power_on(rom_data, rom_size, ram_size))
+            0x01 => {
+                debug!("MBC Type: MBC1 w/o RAM");
+                Box::new(Mbc1::power_on(rom_data, rom_size, 0, false))
+            }
+            0x02 => {
+                debug!("MBC Type: MBC1 w/ RAM Size {:02X}", ram_size);
+                Box::new(Mbc1::power_on(rom_data, rom_size, ram_size, false))
+            }
+            0x03 => {
+                debug!("MBC Type: MBC1 w/ RAM Size {:02X} and Battery", ram_size);
+                Box::new(Mbc1::power_on(rom_data, rom_size, ram_size, true))
             }
             _ => unimplemented!("MBC value {:02X} not supported!", rom_data[0x147]),
         };

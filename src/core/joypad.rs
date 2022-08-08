@@ -1,6 +1,6 @@
 use super::gb::GbKeys;
-use super::interrupt::InterruptKind;
-use super::memory::Memory;
+use super::mmu::InterruptKind;
+use super::mmu::Memory;
 
 /// The eight Game Boy action/direction buttons are arranged as a 2x4 matrix.
 /// Select either action or direction buttons by writing to this register, then read out the bits 0-3.
@@ -14,7 +14,10 @@ pub struct Joypad {
 
 impl Joypad {
     pub fn power_on() -> Self {
-        Joypad { state: 0xFF, using_directions: false }
+        Joypad {
+            state: 0xFF,
+            using_directions: false,
+        }
     }
 
     pub fn update(&mut self, keys_pressed: Option<&[GbKeys]>) -> Option<InterruptKind> {
@@ -71,10 +74,10 @@ impl Memory for Joypad {
 
 #[cfg(test)]
 mod joypad_tests {
-    use crate::core::memory::Memory;
+    use crate::core::mmu::Memory;
 
-    use super::Joypad;
     use super::GbKeys;
+    use super::Joypad;
 
     #[test]
     fn action_buttons() {
@@ -82,11 +85,22 @@ mod joypad_tests {
         joy.write_byte(0xFF00, 0xDF);
         assert_eq!(joy.update(Some(&[GbKeys::A])).is_some(), true);
         assert_eq!(joy.read_byte(0xFF00), 0b1101_1110);
-        assert_eq!(joy.update(Some(&[GbKeys::B, GbKeys::Start])).is_some(), true);
+        assert_eq!(
+            joy.update(Some(&[GbKeys::B, GbKeys::Start])).is_some(),
+            true
+        );
         assert_eq!(joy.read_byte(0xFF00), 0b1101_0101);
-        assert_eq!(joy.update(Some(&[GbKeys::Select, GbKeys::A, GbKeys::Down])).is_some(), true);
+        assert_eq!(
+            joy.update(Some(&[GbKeys::Select, GbKeys::A, GbKeys::Down]))
+                .is_some(),
+            true
+        );
         assert_eq!(joy.read_byte(0xFF00), 0b1101_1010);
-        assert_eq!(joy.update(Some(&[GbKeys::Select, GbKeys::A, GbKeys::Down])).is_some(), false);
+        assert_eq!(
+            joy.update(Some(&[GbKeys::Select, GbKeys::A, GbKeys::Down]))
+                .is_some(),
+            false
+        );
         assert_eq!(joy.read_byte(0xFF00), 0b1101_1010);
         assert_eq!(joy.update(None).is_some(), false);
         assert_eq!(joy.read_byte(0xFF00), 0b1101_1111);
@@ -98,11 +112,20 @@ mod joypad_tests {
         joy.write_byte(0xFF00, 0xEF);
         assert_eq!(joy.update(Some(&[GbKeys::Up])).is_some(), true);
         assert_eq!(joy.read_byte(0xFF00), 0b1110_1011);
-        assert_eq!(joy.update(Some(&[GbKeys::Down, GbKeys::Left])).is_some(), true);
+        assert_eq!(
+            joy.update(Some(&[GbKeys::Down, GbKeys::Left])).is_some(),
+            true
+        );
         assert_eq!(joy.read_byte(0xFF00), 0b1110_0101);
-        assert_eq!(joy.update(Some(&[GbKeys::Right, GbKeys::A])).is_some(), true);
+        assert_eq!(
+            joy.update(Some(&[GbKeys::Right, GbKeys::A])).is_some(),
+            true
+        );
         assert_eq!(joy.read_byte(0xFF00), 0b1110_1110);
-        assert_eq!(joy.update(Some(&[GbKeys::Right, GbKeys::A])).is_some(), false);
+        assert_eq!(
+            joy.update(Some(&[GbKeys::Right, GbKeys::A])).is_some(),
+            false
+        );
         assert_eq!(joy.read_byte(0xFF00), 0b1110_1110);
         assert_eq!(joy.update(None).is_some(), false);
         assert_eq!(joy.read_byte(0xFF00), 0b1110_1111);
@@ -114,19 +137,31 @@ mod joypad_tests {
         joy.write_byte(0xFF00, 0xDF);
         assert_eq!(joy.update(Some(&[GbKeys::A])).is_some(), true);
         assert_eq!(joy.read_byte(0xFF00), 0b1101_1110);
-        assert_eq!(joy.update(Some(&[GbKeys::B, GbKeys::Start])).is_some(), true);
+        assert_eq!(
+            joy.update(Some(&[GbKeys::B, GbKeys::Start])).is_some(),
+            true
+        );
         assert_eq!(joy.read_byte(0xFF00), 0b1101_0101);
-        assert_eq!(joy.update(Some(&[GbKeys::Select, GbKeys::A, GbKeys::Down])).is_some(), true);
+        assert_eq!(
+            joy.update(Some(&[GbKeys::Select, GbKeys::A, GbKeys::Down]))
+                .is_some(),
+            true
+        );
         assert_eq!(joy.read_byte(0xFF00), 0b1101_1010);
         joy.write_byte(0xFF00, 0xEF);
         assert_eq!(joy.update(Some(&[GbKeys::Up])).is_some(), true);
         assert_eq!(joy.read_byte(0xFF00), 0b1110_1011);
-        assert_eq!(joy.update(Some(&[GbKeys::Down, GbKeys::Left])).is_some(), true);
+        assert_eq!(
+            joy.update(Some(&[GbKeys::Down, GbKeys::Left])).is_some(),
+            true
+        );
         assert_eq!(joy.read_byte(0xFF00), 0b1110_0101);
-        assert_eq!(joy.update(Some(&[GbKeys::Right, GbKeys::A])).is_some(), true);
+        assert_eq!(
+            joy.update(Some(&[GbKeys::Right, GbKeys::A])).is_some(),
+            true
+        );
         assert_eq!(joy.read_byte(0xFF00), 0b1110_1110);
         assert_eq!(joy.update(None).is_some(), false);
         assert_eq!(joy.read_byte(0xFF00), 0b1110_1111);
     }
 }
-

@@ -1,7 +1,6 @@
 use std::{panic, usize};
 
-use super::interrupt::InterruptKind;
-use super::memory::Memory;
+use super::mmu::{InterruptKind, Memory};
 
 struct Lcdc {
     /// Bit 7: Enables LCD display on true, disables on false.
@@ -633,7 +632,7 @@ impl Vram {
                     }
 
                     let pixel_rgb = Self::shade_to_rgb_u8(&pixel_shade);
-                    
+
                     self.screen_data[((self.ly as usize * (SCREEN_WIDTH * 3)) + (p * 3))] =
                         pixel_rgb.0;
                     self.screen_data[((self.ly as usize * (SCREEN_WIDTH * 3)) + (p * 3) + 1)] =

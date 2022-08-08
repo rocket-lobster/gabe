@@ -1,8 +1,7 @@
-use crate::core::interrupt::InterruptKind;
-
 use super::disassemble;
-use super::memory::Memory;
 use super::mmu;
+use super::mmu::InterruptKind;
+use super::mmu::Memory;
 use std::fmt;
 
 /// The register F holds flag information that are set by ALU
@@ -329,7 +328,7 @@ impl Cpu {
             mmu.write_byte(0xFF04, 0x0);
             if !(mmu.read_byte(0xFF00) | 0xF0) != 0x0 {
                 self.stopped = false;
-            } 
+            }
             return OPCODE_TABLE[0];
         }
         if self.ime || self.halted {
@@ -558,7 +557,7 @@ impl Cpu {
                 let v = self.imm_word(mmu);
                 mmu.write_word(v, self.reg.sp);
             }
-            
+
             // LD SP,HL
             0xF9 => self.reg.sp = self.reg.get_hl(),
 

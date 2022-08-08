@@ -1,6 +1,9 @@
 use core::panic;
+use std::fs::File;
+use std::io::Write;
 
-use super::memory::Memory;
+use super::super::mmu::Memory;
+use super::{Cartridge, CartridgeError};
 
 // Maximum can support 2 MB worth of ROM banks, which is 0x7F = 128 16-Kb banks
 const MAX_ROM_SIZE: u32 = 0x1FFFFF;
@@ -16,11 +19,12 @@ pub struct Mbc1 {
     ram_bank: u8,
     ram_bank_count: u8,
     ram_enabled: bool,
+    has_battery: bool,
     mode1_enabled: bool,
 }
 
 impl Mbc1 {
-    pub fn power_on(rom: Vec<u8>, rom_size: u8, ram_size: u8) -> Self {
+    pub fn power_on(rom: Vec<u8>, rom_size: u8, ram_size: u8, has_battery: bool) -> Self {
         assert!(rom.len() <= MAX_ROM_SIZE as usize);
         let rom_bank_count: u8 = match rom_size {
             0x0 => 0x02, // 32 KB
@@ -47,6 +51,7 @@ impl Mbc1 {
             rom_bank_count,
             ram_bank_count,
             ram_enabled: false,
+            has_battery,
             mode1_enabled: false,
         }
     }
@@ -59,9 +64,10 @@ impl Memory for Mbc1 {
             0x0000..=0x3FFF => {
                 if self.mode1_enabled {
                     // Using Mode 1, so bits 5 and 6 are used to select the location of the lower bank
-                    // e.g. if we are using bank 0x3A = 0b011_1010, mask bits 4-0 off and use the resulting 
+                    // e.g. if we are using bank 0x3A = 0b011_1010, mask bits 4-0 off and use the resulting
                     // value to find the bank for 0x0000-0x3FFF, which would be 0b011_1010 & 0b110_0000 = 0b010_0000 = bank 0x20
-                    self.rom[(addr as u32 + (0x4000 as u32 * (self.rom_bank & 0x60) as u32)) as usize]
+                    self.rom
+                        [(addr as u32 + (0x4000 as u32 * (self.rom_bank & 0x60) as u32)) as usize]
                 } else {
                     self.rom[addr as usize]
                 }
@@ -74,7 +80,8 @@ impl Memory for Mbc1 {
             0xA000..=0xBFFF => {
                 if self.ram_enabled {
                     if self.mode1_enabled {
-                        self.ram[((addr - 0xA000) as u32 + (0x2000u32 * self.ram_bank as u32)) as usize] 
+                        self.ram
+                            [((addr - 0xA000) as u32 + (0x2000u32 * self.ram_bank as u32)) as usize]
                     } else {
                         // Without Mode 1, RAM always uses bank 0.
                         self.ram[(addr - 0xA000) as usize]
@@ -131,7 +138,8 @@ impl Memory for Mbc1 {
             0xA000..=0xBFFF => {
                 if self.ram_enabled {
                     if self.mode1_enabled {
-                        self.ram[((addr - 0xA000) as u32 + (0x2000u32 * self.ram_bank as u32)) as usize] = val;
+                        self.ram[((addr - 0xA000) as u32 + (0x2000u32 * self.ram_bank as u32))
+                            as usize] = val;
                     } else {
                         // Without Mode 1, RAM always uses bank 0.
                         self.ram[(addr - 0xA000) as usize] = val;
@@ -139,6 +147,29 @@ impl Memory for Mbc1 {
                 }
             }
             _ => error!("Invalid cartridge write address {}", addr),
+        }
+    }
+}
+
+impl Cartridge for Mbc1 {
+    fn write_save_file(&self, filename: &str) -> Result<(), CartridgeError> {
+        if self.has_battery && self.ram_bank_count >= 0x2 {
+            // We have battery-backed RAM available to write to a file
+            match File::open(filename) {
+                Ok(mut f) => {
+                    // If we hit a write error, just propagate up, otherwise we succeed.
+                    if let Err(e) = f.write_all(&self.ram) {
+                        Err(CartridgeError::Io(e))
+                    } else {
+                        Ok(())
+                    }
+                }
+                Err(e) => Err(CartridgeError::Io(e)),
+            }
+        } else {
+            Err(CartridgeError::Unsupported(
+                "Game doesn't support save files via battery-backed ram.".to_string(),
+            ))
         }
     }
 }

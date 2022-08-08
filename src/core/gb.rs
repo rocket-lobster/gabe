@@ -1,7 +1,7 @@
 use super::apu::AudioBuffer;
 use super::cpu;
-use super::memory::Memory;
 use super::mmu;
+use super::mmu::Memory;
 use super::vram::FrameData;
 
 use std::io;

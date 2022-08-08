@@ -1,4 +1,4 @@
-use super::memory::Memory;
+use super::mmu::Memory;
 
 pub struct Wram {
     memory: Vec<u8>,

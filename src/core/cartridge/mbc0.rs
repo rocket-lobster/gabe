@@ -1,4 +1,5 @@
-use super::memory::Memory;
+use super::super::mmu::Memory;
+use super::{Cartridge, CartridgeError};
 
 const CART_ROM_START: usize = 0x0000;
 const CART_ROM_END: usize = 0x7FFF;
@@ -29,6 +30,18 @@ impl Memory for Mbc0 {
         }
     }
     fn write_byte(&mut self, addr: u16, val: u8) {
-        error!("Unassigned write to MBC0 location {:04X} of value {:02X}", addr, val);
+        error!(
+            "Unassigned write to MBC0 location {:04X} of value {:02X}",
+            addr, val
+        );
+    }
+}
+
+impl Cartridge for Mbc0 {
+    fn write_save_file(&self, _filename: &str) -> Result<(), CartridgeError> {
+        // No RAM file to write save to, do nothing
+        Err(CartridgeError::Unsupported(
+            "MBC0 does not support save file writing.".to_string(),
+        ))
     }
 }

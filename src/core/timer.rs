@@ -1,5 +1,4 @@
-use super::interrupt::InterruptKind;
-use super::memory::Memory;
+use super::mmu::{InterruptKind, Memory};
 
 pub struct Timer {
     /// 0xFF04: Divider Register
