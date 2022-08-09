@@ -15,6 +15,7 @@ use std::{
 use clap::{App, Arg};
 use debugger::{Debugger, DebuggerState};
 use minifb::{Key, ScaleMode, Window, WindowOptions};
+use spin_sleep::LoopHelper;
 
 struct Emulator {
     gb: Gameboy,
@@ -98,22 +99,22 @@ fn main() {
         160 * 4,
         144 * 4,
         WindowOptions {
-            resize: true,
+            resize: false,
             scale_mode: ScaleMode::AspectRatioStretch,
             ..WindowOptions::default()
         },
     )
     .expect("Failed to open window.");
 
-    if debug_enabled {
-        // No frame limiting while debugging
-        window.limit_update_rate(None);
-    } else {
-        // 60 fps framelimit
-        window.limit_update_rate(Some(std::time::Duration::from_micros(16742)));
-    }
+    // Disable minifb's rate limiting
+    window.limit_update_rate(None);
+
+    // Construct a spin_sleep LoopHelper
+    // Gameboy runs at 59.73 Hz, so get as close as possible
+    let mut loop_helper = LoopHelper::builder().report_interval_s(0.5).build_with_target_rate(59.73);
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
+        loop_helper.loop_start();
         if emu.debugger.is_running() {
             let action = emu.debugger.update(&emu.gb);
             match action {
@@ -128,7 +129,6 @@ fn main() {
                 }
                 DebuggerState::Stopping => {
                     emu.debugger.quit();
-                    window.limit_update_rate(Some(std::time::Duration::from_micros(16742)));
                 }
             }
             window.update();
@@ -157,6 +157,11 @@ fn main() {
             }
             window.update_with_buffer(&image_buffer, 160, 144).unwrap();
         }
+        if let Some(fps) = loop_helper.report_rate() {
+            print!("\rFramerate: {}", fps);
+            std::io::stdout().flush().unwrap();
+        }
+        loop_helper.loop_sleep();
     }
 }
 
