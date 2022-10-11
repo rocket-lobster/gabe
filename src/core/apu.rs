@@ -3,6 +3,56 @@ use std::sync::{Arc, Mutex};
 
 use super::mmu::Memory;
 
+/// Helper struct to work with BlipBuf objects and manage the data needed to 
+/// use the API, such as calculating the delta, tracking the current buffer
+/// clocks, and ending frames.
+struct SampleBuffer {
+    /// A BlipBuf object that takes input clocks and amplitude deltas of the channel
+    /// and generates samples at the host sample rate
+    buffer: BlipBuf,
+
+    /// The last clock value provided that was associated with a change in amplitude
+    /// Reduced by 8192 whenever an audio frame is generated.
+    previous_clock: u32,
+
+    /// The last amplitude value provided. Used to calculate the amplitude delta 
+    /// for subsequent samples.
+    previous_ampl: i32,
+}
+
+impl SampleBuffer {
+    /// Create a new SampleBuffer that will generate samples at the given sample rate.
+    fn new(sample_rate: u32) -> Self {
+        // Create buffer with enough samples for 1/10 second
+        let mut buffer = BlipBuf::new(sample_rate / 2);
+
+        // 4.19 MHz is the system clock rate to convert samples from
+        buffer.set_rates(4_194_304f64, f64::from(sample_rate));
+
+        SampleBuffer { buffer, previous_clock: 0, previous_ampl: 0 }
+    }
+
+    /// Add a new sample by providing the amplitude as an i32 value, and how many clocks 
+    /// after the previously added sample.
+    fn add_sample(&mut self, clock_offset: u32, sample: i32) {
+        self.buffer.add_delta(self.previous_clock + clock_offset, -(self.previous_ampl - sample));
+        self.previous_clock += clock_offset;
+        self.previous_ampl = sample;
+    }
+
+    /// Marks the end of the current frame of sample data to be generated.
+    /// Flags the buffer to generate samples, resets the running clock offset,
+    /// and then returns a Vec<i16> of the generated samples.
+    fn create_frame(&mut self) -> Vec<i16> {
+        self.buffer.end_frame(8192);
+        self.previous_clock -= 8192;
+        let samples = self.buffer.samples_avail();
+        let mut ret = vec![0; samples as usize];
+        self.buffer.read_samples(ret.as_mut_slice(), false);
+        ret
+    }
+}
+
 struct SquareChannel1 {
     /// Bit 6-4 - Sweep Time
     sweep_time: u8,
@@ -49,29 +99,16 @@ struct SquareChannel1 {
     ///     Period = 4 * (2048 - frequency)
     frequency_period: u32,
 
-    /// The number of frame sequencer cycles, with a period of 8.
-    /// Updates the following:
-    /// Length Counter: 0, 2, 4, 6
-    /// Volume Envelope: 7
-    /// Sweep: 2, 6
-    frame_cycles: usize,
-
     /// The current location in the wave pattern given by wave_pattern
     wave_index: usize,
 
-    /// A BlipBuf object that takes input clocks and amplitudes of the channel
-    /// and generates samples at the host sample rate
-    buffer: BlipBuf,
+    /// Buffer containing the generated waveforms. Outputs data every 8192 CPU clocks,
+    /// i.e. every clock of the frame sequencer
+    buffer: SampleBuffer,
 }
 
 impl SquareChannel1 {
     fn power_on(sample_rate: u32) -> Self {
-        // Create buffer with enough samples for 1 second
-        // TODO: Probably could be lower
-        let mut buf = BlipBuf::new(sample_rate);
-
-        // 4.19 MHz is the system clock rate to convert samples from
-        buf.set_rates(4_194_304f64, f64::from(sample_rate));
 
         SquareChannel1 {
             sweep_time: 0,
@@ -86,14 +123,13 @@ impl SquareChannel1 {
             frequency: 0,
             frequency_period: 8192,
             frequency_cycles: 0,
-            frame_cycles: 0,
             init_sound: false,
             length_enable: false,
-            buffer: buf,
+            buffer: SampleBuffer::new(sample_rate),
         }
     }
 
-    fn update(&mut self, cycles: usize, frame_cycles: usize) {
+    fn update(&mut self, cycles: usize) {
         self.frequency_cycles += cycles;
 
         // Check if the buffer needs to be updated with new samples to match the frequency
@@ -108,11 +144,52 @@ impl SquareChannel1 {
                 _ => unreachable!(),
             };
             // Get the current volume based on the volume envelope state
+            // TODO: half volume for now, use stored envelope value
+            let vol = 7;
             // Set amplitude to 0 if volume is zero or the channel hasn't been triggered
-            // Otherwise amplitude is vol if pattern is high at this step, -vol if pattern is low
+            let amp = if self.init_sound && vol != 0 {
+                // Otherwise amplitude is vol if pattern is high at this step, -vol if pattern is low
+                if (pattern >> self.wave_index) & 0x1 != 0x0 {
+                    vol
+                } else {
+                    -vol
+                }
+            } else {
+                0x0
+            };
             // Put amplitude value into buffer at the next base+period location
+            self.buffer.add_sample(self.frequency_period, amp);
+            //self.buffer.add_delta(clock_time, delta);
+            self.wave_index = (self.wave_index + 1) % 8;
         }
     }
+
+    /// Steps the applicable frame sequencer functions for this channel:
+    /// Length counter, Volume Envelope, Frequency Sweeps
+    /// Then returns the buffer of samples generated since the last frame_step()
+    fn frame_step(&mut self, step_count: u8) -> Vec<i16> {
+        if [0, 2, 4, 6].contains(&step_count) {
+            // Update length counter if enabled
+            if self.length_enable && self.length_data > 0 {
+                // If length counter is enabled and we aren't at 0 yet,
+                // decrement the length counter by 1
+                self.length_data -= 1;
+                
+                // If just reached 0, diable the channel
+                if self.length_data == 0 {
+                    self.init_sound = false;
+                }
+            }
+        }
+        if [2, 6].contains(&step_count) {
+            // Update Freq Sweep 
+        }
+        if step_count == 7 {
+            // Update volume envelope
+        }
+        self.buffer.create_frame()
+    }
+
 }
 
 impl Memory for SquareChannel1 {
@@ -166,13 +243,13 @@ impl Memory for SquareChannel1 {
                 self.envelope_steps = val & 0x7;
             }
             0xFF13 => {
-                self.frequency &= val as u16;
+                self.frequency = (self.frequency & 0xFF00) & (val as u16 | 0xFF00);
                 self.frequency_period = 4 * (2048 - u32::from(self.frequency));
             }
             0xFF14 => {
                 self.init_sound = (val >> 7) & 0x1 != 0x0;
                 self.length_enable = (val >> 6) & 0x1 != 0x0;
-                self.frequency &= (((val as u16) << 8) & 0x0700) | 0xFF;
+                self.frequency = (self.frequency & 0xF8FF) & (((val as u16) << 8) | 0xF8FF);
                 self.frequency_period = 4 * (2048 - u32::from(self.frequency));
             }
             _ => unreachable!(),
@@ -233,7 +310,13 @@ pub struct Apu {
     /// sound sample generation
     /// Wraps every 8192 cycles back to zero, aligning with a full set
     /// of frame sequencer clocks.
-    cycle_count: usize,
+    cycle_count: u32,
+
+    /// The current clock of the Frame Sequencer, values only from 0-7.
+    /// Clocked every 8192 cycles, then passed to each channel to update
+    /// Length counter, Frequency Sweep, and Volume Envelopes.
+    /// Also marks the generation of samples to the host device.
+    frame_cycle: u8,
 
     /// The final stereo output buffer at the host sample rate, after
     /// all mixing. A thread-safe Vec buffer of f32 samples, filled
@@ -261,6 +344,7 @@ impl Apu {
                 channel1_on: true,
                 sample_rate,
                 cycle_count: 0,
+                frame_cycle: 0,
                 out_buffer: buf,
             },
             ret,
@@ -269,14 +353,17 @@ impl Apu {
 
     pub fn update(&mut self, cycles: usize) {
         if self.all_sound_enable {
-            self.cycle_count += cycles;
-            let mut frame_cycles = 0;
+            self.cycle_count += cycles as u32;
+            
+            // Update all channels
+            self.square1.update(cycles);
+
             while self.cycle_count >= 8192 {
                 // Increment the number of frame sequencer clocks
                 self.cycle_count -= 8192;
-                frame_cycles += 1;
+                self.frame_cycle = (self.frame_cycle + 1) % 8;
+                self.square1.frame_step(self.frame_cycle);
             }
-            self.square1.update(cycles, frame_cycles);
         }
     }
 }
