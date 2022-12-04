@@ -42,7 +42,7 @@ impl Mbc1 {
             0x3 => 0x04,      // 32 KB
             _ => panic!("Provided RAM Size unsupported for MBC1."),
         };
-        let ram: Vec<u8> = vec![0; (0x2000u32 * rom_bank_count as u32) as usize];
+        let ram: Vec<u8> = vec![0; (0x2000u32 * ram_bank_count as u32) as usize];
         Mbc1 {
             rom: rom.into_boxed_slice(),
             ram: ram.into_boxed_slice(),

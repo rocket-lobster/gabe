@@ -4,8 +4,6 @@ use std::path::Path;
 use std::{io, panic};
 
 use super::apu::{Apu, AudioBuffer};
-use super::cartridge::mbc0::Mbc0;
-use super::cartridge::mbc1::Mbc1;
 use super::cartridge::Cartridge;
 use super::gb::GbKeys;
 use super::joypad::Joypad;
@@ -94,10 +92,15 @@ impl Mmu {
     /// Opens the given file and reads cartridge header information to find
     /// the MBC type.
     pub fn power_on(path: impl AsRef<Path>, sample_rate: u32) -> io::Result<(Self, AudioBuffer)> {
+        use super::cartridge::mbc0::Mbc0;
+        use super::cartridge::mbc1::Mbc1;
+        use super::cartridge::mbc2::Mbc2;
+
         let mut f = File::open(path.as_ref())?;
         let mut rom_data = Vec::new();
         f.read_to_end(&mut rom_data)?;
-        let title =  std::str::from_utf8(&rom_data[0x134 .. 0x13F]).map_or_else(|_| "Invalid Title", |v| v);
+        let title =
+            std::str::from_utf8(&rom_data[0x134..0x13F]).map_or_else(|_| "Invalid Title", |v| v);
         let rom_size = rom_data[0x148];
         let ram_size = rom_data[0x149];
         info!("Cartridge Info:");
@@ -127,6 +130,14 @@ impl Mmu {
             0x03 => {
                 info!("\tMBC Type: MBC1 w/ RAM and Battery");
                 Box::new(Mbc1::power_on(rom_data, rom_size, ram_size, true))
+            }
+            0x05 => {
+                info!("\tMBC Type: MBC2");
+                Box::new(Mbc2::power_on(rom_data, rom_size, false))
+            }
+            0x06 => {
+                info!("\tMBC Type: MBC2 w/ Battery");
+                Box::new(Mbc2::power_on(rom_data, rom_size, true))
             }
             _ => unimplemented!("MBC value {:02X} not supported!", rom_data[0x147]),
         };

@@ -110,7 +110,7 @@ fn main() {
     let supported_config = supported_configs_range
         .next()
         .expect("no supported config?!")
-        .with_sample_rate(cpal::SampleRate(44100));
+        .with_max_sample_rate();
 
     let mut emu = Emulator::power_on(rom_file, supported_config.sample_rate().0, debug_enabled);
 

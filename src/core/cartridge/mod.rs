@@ -1,5 +1,6 @@
 pub mod mbc0;
 pub mod mbc1;
+pub mod mbc2;
 
 use std::fmt;
 
