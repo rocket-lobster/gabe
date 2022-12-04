@@ -16,7 +16,7 @@ impl Memory for Wram {
     fn read_byte(&self, addr: u16) -> u8 {
         assert!(addr >= 0xC000 && addr <= 0xFDFF);
         if addr >= 0xE000 {
-            error!("Reading WRAM echo memory at 0x{:04X}", addr);
+            warn!("Reading WRAM echo memory at 0x{:04X}", addr);
             self.memory[(addr - 0xE000) as usize]
         } else {
             self.memory[(addr - 0xC000) as usize]
@@ -25,7 +25,7 @@ impl Memory for Wram {
     fn write_byte(&mut self, addr: u16, val: u8) {
         assert!(addr >= 0xC000 && addr <= 0xFDFF);
         if addr >= 0xE000 {
-            error!("Writing to WRAM echo memory at 0x{:04X}", addr);
+            warn!("Writing to WRAM echo memory at 0x{:04X}", addr);
             self.memory[(addr - 0xE000) as usize] = val;
         } else {
             self.memory[(addr - 0xC000) as usize] = val;

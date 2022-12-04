@@ -97,25 +97,35 @@ impl Mmu {
         let mut f = File::open(path.as_ref())?;
         let mut rom_data = Vec::new();
         f.read_to_end(&mut rom_data)?;
-        debug!("ROM size: {}", rom_data.len());
+        let title =  std::str::from_utf8(&rom_data[0x134 .. 0x13F]).map_or_else(|_| "Invalid Title", |v| v);
         let rom_size = rom_data[0x148];
         let ram_size = rom_data[0x149];
-        debug!("Sizes:\t ROM: {:02X}\tRAM: {:02X}", rom_size, ram_size);
+        info!("Cartridge Info:");
+        info!("\tTitle: {}", title);
+        info!("\tROM Size: {} KiB", 32 * (1 << rom_size));
+        match ram_size {
+            0x0 | 0x1 => info!("\tRAM Size: None"),
+            0x2 => info!("\tRAM Size: 8 KiB"),
+            0x3 => info!("\tRAM Size: 32 KiB"),
+            0x4 => info!("\tRAM Size: 128 KiB"),
+            0x5 => info!("\tRAM Size: 64 KiB"),
+            _ => info!("\tRAM Size: Unknown"),
+        };
         let cart: Box<dyn Cartridge> = match rom_data[0x147] {
             0x00 => {
-                debug!("MBC Type: MBC0/No MBC.");
+                info!("\tMBC Type: MBC0/No MBC.");
                 Box::new(Mbc0::power_on(rom_data))
             }
             0x01 => {
-                debug!("MBC Type: MBC1 w/o RAM");
+                info!("\tMBC Type: MBC1 w/o RAM");
                 Box::new(Mbc1::power_on(rom_data, rom_size, 0, false))
             }
             0x02 => {
-                debug!("MBC Type: MBC1 w/ RAM Size {:02X}", ram_size);
+                info!("\tMBC Type: MBC1 w/ RAM");
                 Box::new(Mbc1::power_on(rom_data, rom_size, ram_size, false))
             }
             0x03 => {
-                debug!("MBC Type: MBC1 w/ RAM Size {:02X} and Battery", ram_size);
+                info!("\tMBC Type: MBC1 w/ RAM and Battery");
                 Box::new(Mbc1::power_on(rom_data, rom_size, ram_size, true))
             }
             _ => unimplemented!("MBC value {:02X} not supported!", rom_data[0x147]),

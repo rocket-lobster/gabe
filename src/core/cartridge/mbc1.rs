@@ -168,7 +168,7 @@ impl Cartridge for Mbc1 {
             }
         } else {
             Err(CartridgeError::Unsupported(
-                "Game doesn't support save files via battery-backed ram.".to_string(),
+                "Game doesn't support save files via battery-backed RAM.".to_string(),
             ))
         }
     }

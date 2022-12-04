@@ -344,17 +344,10 @@ impl Cpu {
             return OPCODE_TABLE[0];
         }
 
-        let old_pc = self.reg.pc;
         let mut opcode = self.imm(mmu);
         // Set the IME on the cycle after it changes, delaying any interrupt handling.
         self.ime = self.next_ime;
         let mut using_cb: bool = false;
-        trace!(
-            "0x{:04X}: 0x{:02X} {}",
-            old_pc,
-            opcode,
-            disassemble::get_opcode(opcode)
-        );
         // Use more cycles when following conditional branches,
         // set when conditionals are met.
         let mut cond_cycles: usize = 0;

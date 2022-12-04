@@ -392,7 +392,7 @@ impl Memory for Apu {
                 v
             }
             _ => {
-                warn!("Unassigned APU memory location {:04X}", addr);
+                debug!("Unassigned APU memory location {:04X}", addr);
                 0
             }
         }
@@ -409,7 +409,7 @@ impl Memory for Apu {
             }
             0xFF25 => self.channel_pan = val,
             0xFF26 => self.all_sound_enable = (val >> 7) & 0x1 != 0,
-            _ => warn!("Unassigned APU memory location {:04X}", addr),
+            _ => debug!("Unassigned APU memory location {:04X}", addr),
         }
     }
 }
