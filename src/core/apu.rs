@@ -1,5 +1,5 @@
 use blip_buf::BlipBuf;
-use std::sync::{Arc, Mutex};
+use std::{sync::{Arc, Mutex}, collections::VecDeque};
 
 use super::mmu::Memory;
 
@@ -45,7 +45,7 @@ impl SampleBuffer {
     /// and then returns a Vec<i16> of the generated samples.
     fn create_frame(&mut self) -> Vec<i16> {
         self.buffer.end_frame(8192);
-        self.previous_clock -= 8192;
+        self.previous_clock = self.previous_clock.saturating_sub(8192);
         let samples = self.buffer.samples_avail();
         let mut ret = vec![0; samples as usize];
         self.buffer.read_samples(ret.as_mut_slice(), false);
@@ -258,7 +258,7 @@ impl Memory for SquareChannel1 {
 }
 
 /// Type alias for easier usage by the caller
-pub type AudioBuffer = Arc<Mutex<Vec<(f32, f32)>>>;
+pub type AudioBuffer = Arc<Mutex<VecDeque<(i16, i16)>>>;
 
 pub struct Apu {
     /// Sound Channel 1 - Tone and Sweep
@@ -327,7 +327,7 @@ pub struct Apu {
 
 impl Apu {
     pub fn power_on(sample_rate: u32) -> (Self, AudioBuffer) {
-        let buf = Arc::new(Mutex::new(Vec::new()));
+        let buf = Arc::new(Mutex::new(VecDeque::new()));
         let ret = buf.clone();
         (
             Apu {
@@ -362,7 +362,13 @@ impl Apu {
                 // Increment the number of frame sequencer clocks
                 self.cycle_count -= 8192;
                 self.frame_cycle = (self.frame_cycle + 1) % 8;
-                self.square1.frame_step(self.frame_cycle);
+                let sq1_samples = self.square1.frame_step(self.frame_cycle);
+                {
+                    let mut buffer = self.out_buffer.lock().unwrap();
+                    for s in sq1_samples {
+                        buffer.push_back((s, s));
+                    }
+                }
             }
         }
     }

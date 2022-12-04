@@ -10,25 +10,32 @@ use std::{
     fs::File,
     io::{Read, Write},
     path::Path,
+    sync::{Arc, Mutex}, collections::VecDeque,
 };
 
 use clap::{App, Arg};
+use cpal::{
+    traits::{DeviceTrait, HostTrait, StreamTrait},
+    Sample, SampleFormat,
+};
 use debugger::{Debugger, DebuggerState};
 use minifb::{Key, ScaleMode, Window, WindowOptions};
 
 struct Emulator {
     gb: Gameboy,
     debugger: Debugger,
+    audio_buffer: Arc<Mutex<VecDeque<(i16, i16)>>>,
     current_frame: Box<[u8]>,
 }
 
 impl Emulator {
-    pub fn power_on(path: impl AsRef<Path>, debug: bool) -> Self {
+    pub fn power_on(path: impl AsRef<Path>, sample_rate: u32, debug: bool) -> Self {
         let debugger = Debugger::new(debug);
-        let (gb, audio_buffer) = Gameboy::power_on(path, 0).expect("Path invalid");
+        let (gb, audio_buffer) = Gameboy::power_on(path, sample_rate).expect("Path invalid");
         Emulator {
             gb,
             debugger,
+            audio_buffer,
             current_frame: vec![0; 160 * 144 * 3].into_boxed_slice(),
         }
     }
@@ -91,7 +98,55 @@ fn main() {
         return;
     }
 
-    let mut emu = Emulator::power_on(rom_file, debug_enabled);
+    // Set up audio device, use default config and device.
+    let host = cpal::default_host();
+    let device = host
+        .default_output_device()
+        .expect("No audio output device available.");
+
+    let mut supported_configs_range = device
+        .supported_output_configs()
+        .expect("error while querying configs");
+    let supported_config = supported_configs_range
+        .next()
+        .expect("no supported config?!")
+        .with_sample_rate(cpal::SampleRate(44100));
+
+    let mut emu = Emulator::power_on(rom_file, supported_config.sample_rate().0, debug_enabled);
+
+    // Set up cpal audio stream
+    let buf = emu.audio_buffer.clone();
+    let err_fn = |err| error!("An error occurred on the output audio stream: {}", err);
+    let sample_format = supported_config.sample_format();
+    info!("Sound: ");
+    info!("\t Sample format: {:?}", sample_format);
+    info!("\t Sample rate: {:?}", supported_config.sample_rate().0);
+    info!("\t Channels: {:?}", supported_config.channels());
+    let config = supported_config.into();
+    let stream = match sample_format {
+        SampleFormat::F32 => device.build_output_stream(
+            &config,
+            move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                write_from_buffer::<f32>(data, buf.clone());
+            },
+            err_fn,
+        ),
+        SampleFormat::I16 => device.build_output_stream(
+            &config,
+            move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
+                write_from_buffer::<i16>(data, buf.clone());
+            },
+            err_fn,
+        ),
+        SampleFormat::U16 => device.build_output_stream(
+            &config,
+            move |data: &mut [u16], _: &cpal::OutputCallbackInfo| {
+                write_from_buffer::<u16>(data, buf.clone());
+            },
+            err_fn,
+        ),
+    }
+    .unwrap();
 
     let mut window = Window::new(
         "Gabe Emulator",
@@ -143,24 +198,34 @@ fn main() {
             timestamp = new_ts;
 
             if let Some(frame) = emu.gb.step_seconds(dt, keys_pressed) {
-            emu.current_frame = frame;
-            // Convert the series of u8s into a series of RGB-encoded u32s
-            let iter = emu.current_frame.chunks(3);
-            let mut image_buffer: Vec<u32> = vec![];
-            for chunk in iter {
-                let new_val = from_u8_rgb(chunk[0], chunk[1], chunk[2]);
-                image_buffer.push(new_val);
+                emu.current_frame = frame;
+                // Convert the series of u8s into a series of RGB-encoded u32s
+                let iter = emu.current_frame.chunks(3);
+                let mut image_buffer: Vec<u32> = vec![];
+                for chunk in iter {
+                    let new_val = from_u8_rgb(chunk[0], chunk[1], chunk[2]);
+                    image_buffer.push(new_val);
+                }
+                let keys = window.get_keys();
+                if keys.contains(&Key::LeftCtrl) && keys.contains(&Key::D) && debug_enabled {
+                    // Fall back into debug mode on next update
+                    println!("Received debug command, enabling debugger...");
+                    emu.debugger.start();
+                }
+                window.update_with_buffer(&image_buffer, 160, 144).unwrap();
             }
-            let keys = window.get_keys();
-            if keys.contains(&Key::LeftCtrl) && keys.contains(&Key::D) && debug_enabled {
-                // Fall back into debug mode on next update
-                println!("Received debug command, enabling debugger...");
-                emu.debugger.start();
-            }
-            window.update_with_buffer(&image_buffer, 160, 144).unwrap();
-        }
         }
     }
+}
+
+fn write_from_buffer<T: Sample>(data: &mut [T], input_buf: Arc<Mutex<VecDeque<(i16, i16)>>>) {
+    let mut input_locked = input_buf.lock().unwrap();
+
+    for chunk in data.chunks_exact_mut(2) {
+        if let Some(v) = input_locked.pop_front() {
+            chunk[0] = Sample::from(&v.0);
+            chunk[1] = Sample::from(&v.1);
+        }
     }
 }
 
