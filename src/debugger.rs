@@ -79,7 +79,6 @@ impl Debugger {
                         println!("Completed steps.");
                         let debug_data = state.get_debug_state();
                         println!("{}", debug_data.cpu_data);
-                        println!("Total T-cycles: {}", debug_data.total_cycles);
                         println!("IE: {:02X}  IF: {:02X}", debug_data.ie_data, debug_data.if_data);
                         // Grab max number of bytes needed for any instruction
                         let mem = state.get_memory_range(pc as usize..pc as usize + 3);

@@ -6,11 +6,12 @@ use super::vram::FrameData;
 
 use std::io;
 use std::path::Path;
+use std::time::Duration;
 
 pub struct Gameboy {
     cpu: cpu::Cpu,
     mmu: mmu::Mmu,
-    total_cycles: usize,
+    extra_cycles: usize,
 }
 
 /// The supported input states for the Joypad.
@@ -33,7 +34,6 @@ pub struct GbDebug {
     pub vram_lcdc: u8,
     pub vram_stat: u8,
     pub vram_ly: u8,
-    pub total_cycles: usize,
 }
 
 impl Gameboy {
@@ -45,7 +45,7 @@ impl Gameboy {
             Gameboy {
                 cpu: cpu::Cpu::power_on(),
                 mmu,
-                total_cycles: 0,
+                extra_cycles: 0,
             },
             audio_buffer,
         ))
@@ -67,10 +67,53 @@ impl Gameboy {
     pub fn tick(&mut self, keys_pressed: Option<&[GbKeys]>) -> Option<FrameData> {
         let cycles = self.cpu.tick(&mut self.mmu);
 
-        self.total_cycles += cycles;
-
         // Update memory
         self.mmu.update(cycles, keys_pressed)
+    }
+
+    /// Runs the emulator for the provided number of seconds elapsed, provided as a Duration.
+    /// Converts the Duration into the number of clock cycles elapsed in the seconds provided
+    /// If the provided duration is long enough that multiple video frames are generated, only the
+    /// latest frame will be returned, otherwise it will return None.
+    pub fn step_seconds(
+        &mut self,
+        seconds_elapsed: Duration,
+        keys_pressed: Option<&[GbKeys]>,
+    ) -> Option<FrameData> {
+        // Multiply the provided duration by the clock rate in T-cycles
+        // Flooring to create an integer number of cycles
+        // Minor timing loss from flooring
+        let mut cycles: usize = (seconds_elapsed.as_secs_f64() * 4_194_304f64).floor() as usize;
+
+        // Check if previous steps resulted in more leftover cycles than we need to run
+        // Do nothing if we aren't running enough cycles
+        if cycles <= self.extra_cycles {
+            self.extra_cycles -=  cycles;
+            None
+        } else {
+            // Remove the leftover cycles from a previous step from our current cycles to run
+            cycles -= self.extra_cycles;
+            let mut ret = None;
+
+            while cycles > 0 {
+                let cpu_cycles = self.cpu.tick(&mut self.mmu);
+
+                // Update memory
+                if let Some(f) = self.mmu.update(cpu_cycles, keys_pressed) {
+                    ret = Some(f);
+                }
+
+                // If the number of cycles we ran is more than we needed to run, 
+                // account for that by tracking the extra cycles, and return 0
+                cycles = if let Some(c) = cycles.checked_sub(cpu_cycles) {
+                    c 
+                } else {
+                    self.extra_cycles = cpu_cycles - cycles;
+                    0
+                };
+            }
+            ret
+        }
     }
 
     pub fn get_debug_state(&self) -> GbDebug {
@@ -81,7 +124,6 @@ impl Gameboy {
             vram_lcdc: self.mmu.read_byte(0xFF40),
             vram_stat: self.mmu.read_byte(0xFF41),
             vram_ly: self.mmu.read_byte(0xFF44),
-            total_cycles: self.total_cycles,
         }
     }
 

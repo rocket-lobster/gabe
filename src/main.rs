@@ -15,7 +15,6 @@ use std::{
 use clap::{App, Arg};
 use debugger::{Debugger, DebuggerState};
 use minifb::{Key, ScaleMode, Window, WindowOptions};
-use spin_sleep::LoopHelper;
 
 struct Emulator {
     gb: Gameboy,
@@ -109,12 +108,11 @@ fn main() {
     // Disable minifb's rate limiting
     window.limit_update_rate(None);
 
-    // Construct a spin_sleep LoopHelper
-    // Gameboy runs at 59.73 Hz, so get as close as possible
-    let mut loop_helper = LoopHelper::builder().report_interval_s(0.5).build_with_target_rate(59.73);
+    let mut timestamp = std::time::Instant::now();
+
+    stream.play().unwrap();
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
-        loop_helper.loop_start();
         if emu.debugger.is_running() {
             let action = emu.debugger.update(&emu.gb);
             match action {
@@ -140,7 +138,11 @@ fn main() {
                 Some(keys.as_slice())
             };
 
-            let frame = emu.gb.step(keys_pressed);
+            let new_ts = std::time::Instant::now();
+            let dt = new_ts.duration_since(timestamp);
+            timestamp = new_ts;
+
+            if let Some(frame) = emu.gb.step_seconds(dt, keys_pressed) {
             emu.current_frame = frame;
             // Convert the series of u8s into a series of RGB-encoded u32s
             let iter = emu.current_frame.chunks(3);
@@ -157,11 +159,8 @@ fn main() {
             }
             window.update_with_buffer(&image_buffer, 160, 144).unwrap();
         }
-        if let Some(fps) = loop_helper.report_rate() {
-            print!("\rFramerate: {}", fps);
-            std::io::stdout().flush().unwrap();
         }
-        loop_helper.loop_sleep();
+    }
     }
 }
 
