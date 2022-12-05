@@ -2,7 +2,7 @@
 name = "gabe"
 version = "0.1.0"
 authors = ["Joe Thill <rocketlobster42@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 [profile.dev]
 opt-level = 1
