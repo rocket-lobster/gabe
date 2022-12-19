@@ -1997,7 +1997,7 @@ mod cpu_tests {
         reg.set_de(0x9001);
         reg.set_hl(0x2345);
         assert_eq!(reg.a, 0x12);
-        assert_eq!(reg.f, 0x34);
+        assert_eq!(reg.f, 0x30);
         assert_eq!(reg.b, 0x56);
         assert_eq!(reg.c, 0x78);
         assert_eq!(reg.d, 0x90);

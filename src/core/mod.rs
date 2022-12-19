@@ -7,5 +7,6 @@ mod joypad;
 mod mmu;
 mod serial;
 mod timer;
+mod util;
 mod vram;
 mod wram;
