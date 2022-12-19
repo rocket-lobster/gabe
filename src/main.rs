@@ -119,6 +119,7 @@ fn main() {
     let err_fn = |err| error!("An error occurred on the output audio stream: {}", err);
     let sample_format = supported_config.sample_format();
     info!("Sound: ");
+    info!("\t Device: {:?}", device.name().unwrap());
     info!("\t Sample format: {:?}", sample_format);
     info!("\t Sample rate: {:?}", supported_config.sample_rate().0);
     info!("\t Channels: {:?}", supported_config.channels());
