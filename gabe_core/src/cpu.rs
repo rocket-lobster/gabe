@@ -1,4 +1,3 @@
-use super::disassemble;
 use super::mmu;
 use super::mmu::InterruptKind;
 use super::mmu::Memory;

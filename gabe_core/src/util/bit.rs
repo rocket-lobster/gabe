@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 #[inline(always)]
 pub fn test_bit(val: u8, index: u8) -> bool {
     assert!(index < 8);

@@ -1,5 +1,5 @@
 [package]
-name = "gabe"
+name = "gabe_core"
 version = "0.1.0"
 authors = ["Joe Thill <rocketlobster42@gmail.com>"]
 edition = "2021"
@@ -11,9 +11,4 @@ opt-level = 1
 debug = true
 
 [dependencies]
-clap = "2.33.0"
 log = "*"
-env_logger = "*"
-minifb = "0.23.0"
-blip_buf = "0.1.4"
-cpal = "*"

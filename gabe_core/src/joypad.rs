@@ -74,7 +74,7 @@ impl Memory for Joypad {
 
 #[cfg(test)]
 mod joypad_tests {
-    use crate::core::mmu::Memory;
+    use crate::mmu::Memory;
 
     use super::GbKeys;
     use super::Joypad;

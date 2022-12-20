@@ -1,69 +1,7 @@
-use blip_buf::BlipBuf;
-use std::{
-    collections::VecDeque,
-    sync::{Arc, Mutex},
-};
+#![allow(dead_code)]
+#![allow(unused_variables)]
 
-use super::{mmu::Memory, util::bit::extract_bits};
-
-const BUFFER_SIZE: usize = 2048;
-
-/// Helper struct to work with BlipBuf objects and manage the data needed to
-/// use the API, such as calculating the delta, tracking the current buffer
-/// clocks, and ending frames.
-struct SampleBuffer {
-    /// A BlipBuf object that takes input clocks and amplitude deltas of the channel
-    /// and generates samples at the host sample rate
-    buffer: BlipBuf,
-
-    /// The last clock value provided that was associated with a change in amplitude
-    /// Reduced by 8192 whenever an audio frame is generated.
-    previous_clock: u32,
-
-    /// The last amplitude value provided. Used to calculate the amplitude delta
-    /// for subsequent samples.
-    previous_ampl: i32,
-}
-
-impl SampleBuffer {
-    /// Create a new SampleBuffer that will generate samples at the given sample rate.
-    fn new(sample_rate: u32) -> Self {
-        // Create buffer with enough samples for 1/10 second
-        let mut buffer = BlipBuf::new(sample_rate / 10);
-
-        // 4.19 MHz is the system clock rate to convert samples from
-        buffer.set_rates(4_194_304f64, f64::from(sample_rate));
-
-        SampleBuffer {
-            buffer,
-            previous_clock: 0,
-            previous_ampl: 0,
-        }
-    }
-
-    /// Add a new sample by providing the amplitude as an i32 value, and how many clocks
-    /// after the previously added sample.
-    fn add_sample(&mut self, clock_offset: u32, sample: i32) {
-        self.buffer.add_delta(
-            self.previous_clock + clock_offset,
-            -(self.previous_ampl - sample),
-        );
-        self.previous_clock += clock_offset;
-        self.previous_ampl = sample;
-    }
-
-    /// Marks the end of the current frame of sample data to be generated.
-    /// Flags the buffer to generate samples, resets the running clock offset,
-    /// and then returns a Vec<i16> of the generated samples.
-    fn create_frame(&mut self) -> Vec<i16> {
-        self.buffer.end_frame(8192);
-        self.previous_clock = self.previous_clock.saturating_sub(8192);
-        let samples = self.buffer.samples_avail();
-        let mut ret = vec![0; samples as usize];
-        self.buffer.read_samples(ret.as_mut_slice(), false);
-        ret
-    }
-}
+use super::{mmu::Memory, util::bit::*};
 
 struct SquareChannel1 {
     /// CH1 Sweep Control (R/W)
@@ -115,10 +53,6 @@ struct SquareChannel1 {
 
     /// The current location in the wave pattern given by wave_pattern
     wave_index: usize,
-
-    /// Buffer containing the generated waveforms. Outputs data every 8192 CPU clocks,
-    /// i.e. every clock of the frame sequencer
-    buffer: SampleBuffer,
 }
 
 impl Memory for SquareChannel1 {
@@ -146,9 +80,6 @@ impl Memory for SquareChannel1 {
         }
     }
 }
-
-/// Type alias for easier usage by the caller
-pub type AudioBuffer = Arc<Mutex<VecDeque<(i16, i16)>>>;
 
 pub struct Apu {
     // Global Registers
@@ -201,26 +132,11 @@ pub struct Apu {
     /// Length counter, Frequency Sweep, and Volume Envelopes.
     /// Also marks the generation of samples to the host device.
     frame_cycle: u8,
-
-    /// A buffer of a given buffer size that is used to store the generated
-    /// samples prior to writing to audio driver output. Reduces the number
-    /// of mutex locks on the driver output and provides a way to tweak
-    /// the latency/crackling tradeoff.
-    internal_buffer: VecDeque<(i16, i16)>,
-
-    /// The final stereo output buffer at the host sample rate, after
-    /// all mixing. A thread-safe Vec buffer of f32 samples, filled
-    /// as the emulator generates samples. If the buffer is full,
-    /// the APU will skip the samples until there's room.
-    out_buffer: AudioBuffer,
 }
 
 impl Apu {
-    pub fn power_on(sample_rate: u32) -> (Self, AudioBuffer) {
-        let buf = Arc::new(Mutex::new(VecDeque::new()));
-        let ret = buf.clone();
-        (
-            Apu {
+    pub fn power_on(sample_rate: u32) -> Self {
+        Apu {
                 square1: SquareChannel1 {
                     sweep_control: 0x80,
                     length_data: 0xBF,
@@ -233,7 +149,6 @@ impl Apu {
                     frequency_period: (2048 - 1750) * 4,
                     frequency_cycles: 0,
                     wave_index: 0,
-                    buffer: SampleBuffer::new(sample_rate),
                 },
                 output_control: 0x77,
                 channel_pan: 0xF3,
@@ -241,15 +156,11 @@ impl Apu {
                 sample_rate,
                 cycle_count: 0,
                 frame_cycle: 0,
-                internal_buffer: VecDeque::new(),
-                out_buffer: buf,
-            },
-            ret,
-        )
+            }
     }
 
     pub fn update(&mut self, cycles: usize) {
-        //if test_bit(self.sound_on, 7) {
+    if test_bit(self.sound_on, 7) {
         for _ in 0..cycles {
             self.cycle_count += 1;
 
@@ -272,20 +183,17 @@ impl Apu {
                 // TODO: half volume for now, use stored envelope value
                 let vol = 7;
                 // Set amplitude to 0 if volume is zero or the channel hasn't been triggered
-                let amp = //if test_bit(self.square1.freq_high_control, 7) && vol != 0 {
+                let amp = if test_bit(self.square1.freq_high_control, 7) && vol != 0 {
                         // Otherwise amplitude is vol if pattern is high at this step, -vol if pattern is low
                         if (pattern >> self.square1.wave_index) & 0x1 != 0x0 {
                             (i16::MAX / 100) as i32
                         } else {
                             (i16::MIN / 100) as i32
-                        };
-                // } else {
-                //     0x0
-                // };
+                        }
+                } else {
+                    0x0
+                };
                 // Put amplitude value into buffer at the next base+period location
-                self.square1
-                    .buffer
-                    .add_sample(self.square1.frequency_period, amp);
                 self.square1.wave_index = (self.square1.wave_index + 1) % 8;
 
                 self.square1.frequency_period = (2048
@@ -306,19 +214,9 @@ impl Apu {
                     if self.frame_cycle == 7 {
                         // Update volume envelope
                     }
-                    let sq1_samples = self.square1.buffer.create_frame();
-                    for s in sq1_samples {
-                        self.internal_buffer.push_back((s, s));
-                    }
-                    if self.internal_buffer.len() >= BUFFER_SIZE {
-                        let mut driver = self.out_buffer.lock().unwrap();
-                        for d in self.internal_buffer.drain(0..BUFFER_SIZE) {
-                            driver.push_back(d);
-                        }
-                    }
                 }
             }
-            // }
+            }
         }
     }
 }

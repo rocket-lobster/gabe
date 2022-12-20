@@ -1,10 +1,10 @@
-#[macro_use]
 extern crate log;
 extern crate env_logger;
-mod core;
+extern crate gabe_core;
+
 mod debugger;
 
-use crate::core::gb::{Gameboy, GbKeys};
+use gabe_core::gb::*;
 
 use std::{
     fs::File,
@@ -24,18 +24,16 @@ use minifb::{Key, ScaleMode, Window, WindowOptions};
 struct Emulator {
     gb: Gameboy,
     debugger: Debugger,
-    audio_buffer: Arc<Mutex<VecDeque<(i16, i16)>>>,
     current_frame: Box<[u8]>,
 }
 
 impl Emulator {
     pub fn power_on(path: impl AsRef<Path>, sample_rate: u32, debug: bool) -> Self {
         let debugger = Debugger::new(debug);
-        let (gb, audio_buffer) = Gameboy::power_on(path, sample_rate).expect("Path invalid");
+        let gb = Gameboy::power_on(path, sample_rate).expect("Path invalid");
         Emulator {
             gb,
             debugger,
-            audio_buffer,
             current_frame: vec![0; 160 * 144 * 3].into_boxed_slice(),
         }
     }
@@ -115,39 +113,39 @@ fn main() {
     let mut emu = Emulator::power_on(rom_file, supported_config.sample_rate().0, debug_enabled);
 
     // Set up cpal audio stream
-    let buf = emu.audio_buffer.clone();
-    let err_fn = |err| error!("An error occurred on the output audio stream: {}", err);
-    let sample_format = supported_config.sample_format();
-    info!("Sound: ");
-    info!("\t Device: {:?}", device.name().unwrap());
-    info!("\t Sample format: {:?}", sample_format);
-    info!("\t Sample rate: {:?}", supported_config.sample_rate().0);
-    info!("\t Channels: {:?}", supported_config.channels());
-    let config = supported_config.into();
-    let stream = match sample_format {
-        SampleFormat::F32 => device.build_output_stream(
-            &config,
-            move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                write_from_buffer::<f32>(data, buf.clone());
-            },
-            err_fn,
-        ),
-        SampleFormat::I16 => device.build_output_stream(
-            &config,
-            move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                write_from_buffer::<i16>(data, buf.clone());
-            },
-            err_fn,
-        ),
-        SampleFormat::U16 => device.build_output_stream(
-            &config,
-            move |data: &mut [u16], _: &cpal::OutputCallbackInfo| {
-                write_from_buffer::<u16>(data, buf.clone());
-            },
-            err_fn,
-        ),
-    }
-    .unwrap();
+    // let buf = emu.audio_buffer.clone();
+    // let err_fn = |err| error!("An error occurred on the output audio stream: {}", err);
+    // let sample_format = supported_config.sample_format();
+    // info!("Sound: ");
+    // info!("\t Device: {:?}", device.name().unwrap());
+    // info!("\t Sample format: {:?}", sample_format);
+    // info!("\t Sample rate: {:?}", supported_config.sample_rate().0);
+    // info!("\t Channels: {:?}", supported_config.channels());
+    // let config = supported_config.into();
+    // let stream = match sample_format {
+    //     SampleFormat::F32 => device.build_output_stream(
+    //         &config,
+    //         move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+    //             write_from_buffer::<f32>(data, buf.clone());
+    //         },
+    //         err_fn,
+    //     ),
+    //     SampleFormat::I16 => device.build_output_stream(
+    //         &config,
+    //         move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
+    //             write_from_buffer::<i16>(data, buf.clone());
+    //         },
+    //         err_fn,
+    //     ),
+    //     SampleFormat::U16 => device.build_output_stream(
+    //         &config,
+    //         move |data: &mut [u16], _: &cpal::OutputCallbackInfo| {
+    //             write_from_buffer::<u16>(data, buf.clone());
+    //         },
+    //         err_fn,
+    //     ),
+    // }
+    // .unwrap();
 
     let mut window = Window::new(
         "Gabe Emulator",
@@ -165,8 +163,6 @@ fn main() {
     window.limit_update_rate(None);
 
     let mut timestamp = std::time::Instant::now();
-
-    stream.play().unwrap();
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         if emu.debugger.is_running() {
@@ -235,7 +231,7 @@ fn disassemble_to_file(path: impl AsRef<Path>) -> Result<(), std::io::Error> {
     let mut out_file = File::create("output.asm")?;
     let mut rom_data = Vec::new();
     in_file.read_to_end(&mut rom_data)?;
-    let disasm = core::disassemble::disassemble_block(rom_data.into_boxed_slice(), 0);
+    let disasm = gabe_core::disassemble::disassemble_block(rom_data.into_boxed_slice(), 0);
     for (p, s) in disasm {
         out_file.write_all(format!("0x{:04X}: {}\n", p, s).as_bytes())?;
     }

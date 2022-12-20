@@ -1,6 +1,6 @@
 use std::{io::Write, ops::Range};
 
-use crate::core::{disassemble, gb::Gameboy};
+use gabe_core::{disassemble, gb::Gameboy};
 
 pub struct Debugger {
     enabled: bool,

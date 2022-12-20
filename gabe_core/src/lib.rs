@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate log;
+
 pub mod gb;
 pub mod disassemble;
 mod apu;

@@ -561,7 +561,7 @@ impl Vram {
                     let mut tile_pixel_y = (self.ly as u8 + 16).wrapping_sub(y_pos);
 
                     // Parse attributes
-                    let bg_prio = (attribs & 0b1000_0000) != 0;
+                    let _bg_prio = (attribs & 0b1000_0000) != 0;
                     let y_flip = (attribs & 0b0100_0000) != 0;
                     let x_flip = (attribs & 0b0010_0000) != 0;
                     let obp1 = (attribs & 0b0001_0000) != 0;

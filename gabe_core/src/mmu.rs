@@ -3,7 +3,7 @@ use std::io::Read;
 use std::path::Path;
 use std::{io, panic};
 
-use super::apu::{Apu, AudioBuffer};
+use super::apu::Apu;
 use super::cartridge::Cartridge;
 use super::gb::GbKeys;
 use super::joypad::Joypad;
@@ -91,7 +91,7 @@ impl Mmu {
     /// Initializes the MMU with the given ROM path.
     /// Opens the given file and reads cartridge header information to find
     /// the MBC type.
-    pub fn power_on(path: impl AsRef<Path>, sample_rate: u32) -> io::Result<(Self, AudioBuffer)> {
+    pub fn power_on(path: impl AsRef<Path>, sample_rate: u32) -> io::Result<Self> {
         use super::cartridge::mbc0::Mbc0;
         use super::cartridge::mbc1::Mbc1;
         use super::cartridge::mbc2::Mbc2;
@@ -141,10 +141,9 @@ impl Mmu {
             }
             _ => unimplemented!("MBC value {:02X} not supported!", rom_data[0x147]),
         };
-        let (apu, audio_buffer) = Apu::power_on(sample_rate);
         let mmu = Mmu {
             cart,
-            apu,
+            apu: Apu::power_on(sample_rate),
             vram: Vram::power_on(),
             wram: Wram::power_on(),
             timer: Timer::power_on(),
@@ -157,7 +156,7 @@ impl Mmu {
             previous_dma: 0xFF,
         };
 
-        Ok((mmu, audio_buffer))
+        Ok(mmu)
     }
 
     /// Updates all memory components to align with the number of cycles
