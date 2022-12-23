@@ -135,7 +135,7 @@ impl Registers {
 /// Tables of opcode cycle counts.
 /// Skipped when running rustfmt
 #[rustfmt::skip]
-const OPCODE_TABLE: [usize; 256] = [
+const OPCODE_TABLE: [u32; 256] = [
 //  0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F
     4,12, 8, 8, 4, 4, 8, 4,20, 8, 8, 8, 4, 4, 8, 4, // 0
     4,12, 8, 8, 4, 4, 8, 4,12, 8, 8, 8, 4, 4, 8, 4, // 1
@@ -158,7 +158,7 @@ const OPCODE_TABLE: [usize; 256] = [
 /// Tables of opcode cycle counts for extended opcodes.
 /// Skipped when running rustfmt
 #[rustfmt::skip]
-const OPCODE_CB_TABLE: [usize; 256] = [
+const OPCODE_CB_TABLE: [u32; 256] = [
 //  0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F
     8, 8, 8, 8, 8, 8,16, 8, 8, 8, 8, 8, 8, 8,16, 8, // 0
     8, 8, 8, 8, 8, 8,16, 8, 8, 8, 8, 8, 8, 8,16, 8, // 1
@@ -248,7 +248,7 @@ impl Cpu {
         self.clone()
     }
 
-    fn check_interrupts(&mut self, mmu: &mut mmu::Mmu) -> Option<usize> {
+    fn check_interrupts(&mut self, mmu: &mut mmu::Mmu) -> Option<u32> {
         // Check if any enabled interrupts were requested
         let mut interrupt_reqs = mmu.read_byte(0xFF0F);
         let interrupt_enables = mmu.read_byte(0xFFFF);
@@ -321,7 +321,7 @@ impl Cpu {
     /// Fetches a single instruction opcode, decodes the opcode to the
     /// appropriate function, and executes the functionality.
     /// Returns the number of cycles executed.
-    pub fn tick(&mut self, mmu: &mut mmu::Mmu) -> usize {
+    pub fn tick(&mut self, mmu: &mut mmu::Mmu) -> u32 {
         if self.stopped {
             // Reset DIV
             mmu.write_byte(0xFF04, 0x0);
@@ -349,7 +349,7 @@ impl Cpu {
         let mut using_cb: bool = false;
         // Use more cycles when following conditional branches,
         // set when conditionals are met.
-        let mut cond_cycles: usize = 0;
+        let mut cond_cycles = 0;
         match opcode {
             // NOP
             0x00 => (),

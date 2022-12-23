@@ -8,6 +8,7 @@ use super::cartridge::Cartridge;
 use super::gb::GbKeys;
 use super::joypad::Joypad;
 use super::serial::Serial;
+use super::sink::*;
 use super::timer::Timer;
 use super::vram::{FrameData, Vram};
 use super::wram::Wram;
@@ -78,7 +79,7 @@ pub struct Mmu {
     vram: Vram,
     wram: Wram,
     timer: Timer,
-    joypad: Joypad,
+    pub joypad: Joypad,
     serial: Serial,
     hram: [u8; 0x7F],
     intf: u8,
@@ -91,7 +92,7 @@ impl Mmu {
     /// Initializes the MMU with the given ROM path.
     /// Opens the given file and reads cartridge header information to find
     /// the MBC type.
-    pub fn power_on(path: impl AsRef<Path>, sample_rate: u32) -> io::Result<Self> {
+    pub fn power_on(path: impl AsRef<Path>) -> io::Result<Self> {
         use super::cartridge::mbc0::Mbc0;
         use super::cartridge::mbc1::Mbc1;
         use super::cartridge::mbc2::Mbc2;
@@ -143,7 +144,7 @@ impl Mmu {
         };
         let mmu = Mmu {
             cart,
-            apu: Apu::power_on(sample_rate),
+            apu: Apu::power_on(),
             vram: Vram::power_on(),
             wram: Wram::power_on(),
             timer: Timer::power_on(),
@@ -165,15 +166,15 @@ impl Mmu {
     /// block, for the CPU to handle on the next fetch.
     /// If a frame was completed during execution, return `FrameData` to caller,
     /// otherwise return `None`
-    pub fn update(&mut self, cycles: usize, keys_pressed: Option<&[GbKeys]>) -> Option<FrameData> {
+    pub fn update(&mut self, cycles: u32, video_sink: &mut dyn Sink<VideoFrame>, audio_sink: &mut dyn Sink<AudioFrame>) {
         if self.dma_state != DmaState::Stopped {
             self.dma_state = self.run_dma(cycles);
         }
         // Update APU
-        self.apu.update(cycles);
+        self.apu.update(cycles, audio_sink);
 
         // Update Joypad
-        if let Some(i) = self.joypad.update(keys_pressed) {
+        if let Some(i) = self.joypad.update() {
             self.request_interrupt(i);
         }
 
@@ -182,18 +183,10 @@ impl Mmu {
             self.request_interrupt(i);
         }
         // Update VRAM
-        if let Some(i) = self.vram.update(cycles) {
+        if let Some(i) = self.vram.update(cycles, video_sink) {
             for interrupt in i {
                 self.request_interrupt(interrupt);
             }
-        }
-
-        // Check if we're ready to provide the next frame
-        // If so, pass along the frame data, otherwise return None
-        if self.vram.new_frame_ready() {
-            Some(self.vram.request_frame().unwrap())
-        } else {
-            None
         }
     }
 
@@ -225,7 +218,7 @@ impl Mmu {
     /// It takes about 160 us for a full DMA, which is a little more than
     /// 1 us per cycle. Doing 1-to-1 cycles into a write of data for simplicity
     /// even though that will complete DMA a *bit* faster than hardware.
-    fn run_dma(&mut self, cycles: usize) -> DmaState {
+    fn run_dma(&mut self, cycles: u32) -> DmaState {
         match self.dma_state {
             DmaState::Starting(s) => {
                 let addr = (s as u16) << 8;

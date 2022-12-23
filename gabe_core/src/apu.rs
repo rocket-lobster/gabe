@@ -2,6 +2,7 @@
 #![allow(unused_variables)]
 
 use super::{mmu::Memory, util::bit::*};
+use super::sink::*;
 
 struct SquareChannel1 {
     /// CH1 Sweep Control (R/W)
@@ -116,10 +117,6 @@ pub struct Apu {
     /// NR10-NR14 ($FF10-$FF14)
     square1: SquareChannel1,
 
-    /// The host sample rate to convert the generated waveforms into,
-    /// provided at emulator power-on.
-    sample_rate: u32,
-
     /// The current cycle count in CPU cycles at 4.19 MHz
     /// Used to step the frame sequencer and determine
     /// sound sample generation
@@ -135,7 +132,7 @@ pub struct Apu {
 }
 
 impl Apu {
-    pub fn power_on(sample_rate: u32) -> Self {
+    pub fn power_on() -> Self {
         Apu {
                 square1: SquareChannel1 {
                     sweep_control: 0x80,
@@ -153,13 +150,12 @@ impl Apu {
                 output_control: 0x77,
                 channel_pan: 0xF3,
                 sound_on: 0xF1,
-                sample_rate,
                 cycle_count: 0,
                 frame_cycle: 0,
             }
     }
 
-    pub fn update(&mut self, cycles: usize) {
+    pub fn update(&mut self, cycles: u32, audio_sink: &mut dyn Sink<AudioFrame>) {
     if test_bit(self.sound_on, 7) {
         for _ in 0..cycles {
             self.cycle_count += 1;

@@ -21,9 +21,9 @@ pub struct Timer {
     ///     - 11: 16384 Hz
     tac: u8,
     /// Tracks the current cycles before incrementing DIV, increments at 256 cycles
-    div_cycles: usize,
+    div_cycles: u32,
     /// Tracks the current cycles before incrementing TIMA, depends on TAC frequency
-    tima_cycles: usize,
+    tima_cycles: u32,
 }
 
 impl Timer {
@@ -40,7 +40,7 @@ impl Timer {
 
     /// Updates all the timer registers up to the same cycles as the CPU.
     /// Returns an Option with an Interrupt::Timer if the timer overflowed.
-    pub fn update(&mut self, cycles: usize) -> Option<InterruptKind> {
+    pub fn update(&mut self, cycles: u32) -> Option<InterruptKind> {
         // Update DIV timer
         self.div_cycles += cycles;
         if self.div_cycles >= 256 {
@@ -64,7 +64,7 @@ impl Timer {
 
     /// Reads the value of the TAC register and returns the number of
     /// CPU cycles needed before incrementing the TIMA register
-    fn get_tima_freq(&self) -> usize {
+    fn get_tima_freq(&self) -> u32 {
         match self.tac & 0b11 {
             0b00 => 1024,
             0b01 => 16,

@@ -1,6 +1,7 @@
 use std::{panic, usize};
 
 use super::mmu::{InterruptKind, Memory};
+use super::sink::*;
 
 struct Lcdc {
     /// Bit 7: Enables LCD display on true, disables on false.
@@ -272,7 +273,7 @@ pub struct Vram {
 
     /// Number of cycles, or dots, that the LCD is in the current scanline. Max is 456, and value
     /// determines which Mode the LCD is in. Corresponds to CPU cycles passed in to MMU.
-    scanline_cycles: usize,
+    scanline_cycles: u32,
 
     /// A list of OAM entries that will be drawn during the next scanline draw.
     /// Represented as entries in the OAM, 0-39 (40 total entries)
@@ -310,7 +311,7 @@ impl Vram {
             window_coords: (0x0, 0x0),
             scanline_cycles: 0,
             obj_list: Vec::with_capacity(40),
-            screen_data: vec![0x0; 3 * SCREEN_WIDTH * SCREEN_HEIGHT].into_boxed_slice(),
+            screen_data: vec![0x0; 4 * SCREEN_WIDTH * SCREEN_HEIGHT].into_boxed_slice(),
             has_new_frame: false,
             memory: vec![0; 0x2000],
             oam: vec![0; 0xA0],
@@ -321,7 +322,7 @@ impl Vram {
         ret
     }
 
-    pub fn update(&mut self, cycles: usize) -> Option<Vec<InterruptKind>> {
+    pub fn update(&mut self, cycles: u32, video_sink: &mut dyn Sink<VideoFrame>) -> Option<Vec<InterruptKind>> {
         let mut interrupts: Vec<InterruptKind> = vec![];
 
         // If LCD is disabled, nothing is done, blank display
@@ -363,6 +364,7 @@ impl Vram {
                 self.stat.mode_flag = LCDMode::Mode1;
                 // New frame ready to be rendered
                 self.has_new_frame = true;
+                video_sink.append(self.screen_data.clone());
                 interrupts.push(InterruptKind::VBlank);
                 if self.stat.vblank_interrupt && !interrupts.contains(&InterruptKind::LcdStat) {
                     interrupts.push(InterruptKind::LcdStat);
@@ -652,24 +654,6 @@ impl Vram {
             GrayShades::DarkGray => (85, 85, 85),
             GrayShades::LightGray => (170, 170, 170),
             GrayShades::White => (255, 255, 255),
-        }
-    }
-
-    /// Returns if there's a new frame completed and ready to render. Call this before
-    /// calling `request_frame`, unless multiple copies of the same frame are needed.
-    pub fn new_frame_ready(&self) -> bool {
-        self.has_new_frame
-    }
-
-    /// Request a frame to display from the LCD controller. Only returns screen data during
-    /// V-Blank, otherwise returns None.
-    pub fn request_frame(&mut self) -> Option<FrameData> {
-        if self.stat.mode_flag == LCDMode::Mode1 {
-            // Frame has been requested, so frame is stale until another is rendered.
-            self.has_new_frame = false;
-            Some(self.screen_data.clone())
-        } else {
-            None
         }
     }
 }
