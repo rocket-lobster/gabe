@@ -1,40 +1,89 @@
-extern crate log;
-extern crate env_logger;
-extern crate gabe_core;
-
+mod audio_driver;
 mod debugger;
+mod time_source;
 
-use gabe_core::gb::*;
+use gabe_core::{gb::*, sink::{VideoFrame, Sink, AudioFrame}};
+use time_source::TimeSource;
 
 use std::{
     fs::File,
     io::{Read, Write},
     path::Path,
-    sync::{Arc, Mutex}, collections::VecDeque,
+    time::{Instant, SystemTime}, alloc::System, collections::VecDeque,
 };
 
 use clap::{App, Arg};
-use cpal::{
-    traits::{DeviceTrait, HostTrait, StreamTrait},
-    Sample, SampleFormat,
-};
+
 use debugger::{Debugger, DebuggerState};
-use minifb::{Key, ScaleMode, Window, WindowOptions};
+use minifb::{Key, ScaleMode, Window, WindowOptions, KeyRepeat};
+
+const CYCLE_TIME_NS: u64 = 238;
+
+struct SystemTimeSource {
+    start: Instant
+}
+
+impl SystemTimeSource {
+    fn new() -> Self {
+        SystemTimeSource { start: Instant::now() }
+    }
+}
+
+impl TimeSource for SystemTimeSource {
+    fn time_ns(&self) -> u64 {
+        let elapsed = self.start.elapsed();
+        elapsed.as_secs() * 1_000_000_000 + (elapsed.subsec_nanos() as u64)
+    }
+}
+
+struct MostRecentSink {
+    inner: Option<VideoFrame>,
+}
+
+impl MostRecentSink {
+    fn new() -> Self {
+        MostRecentSink { inner: None }
+    }
+
+    fn has_frame(&self) -> bool {
+        self.inner.is_some()
+    }
+
+    fn into_inner(self) -> Option<VideoFrame> {
+        self.inner
+    }
+}
+
+impl Sink<VideoFrame> for MostRecentSink {
+    fn append(&mut self, value: VideoFrame) {
+        self.inner = Some(value);
+    }
+}
+
+struct SimpleAudioSink {
+    inner: VecDeque<AudioFrame>
+}
+
+impl Sink<AudioFrame> for SimpleAudioSink {
+    fn append(&mut self, value: AudioFrame) {
+        self.inner.push_back(value);
+    }
+}
 
 struct Emulator {
     gb: Gameboy,
     debugger: Debugger,
-    current_frame: Box<[u8]>,
+    emulated_cycles: u64,
 }
 
 impl Emulator {
-    pub fn power_on(path: impl AsRef<Path>, sample_rate: u32, debug: bool) -> Self {
+    pub fn power_on(path: impl AsRef<Path>, debug: bool) -> Self {
         let debugger = Debugger::new(debug);
-        let gb = Gameboy::power_on(path, sample_rate).expect("Path invalid");
+        let gb = Gameboy::power_on(path).expect("Path invalid");
         Emulator {
             gb,
             debugger,
-            current_frame: vec![0; 160 * 144 * 3].into_boxed_slice(),
+            emulated_cycles: 0,
         }
     }
 }
@@ -96,56 +145,7 @@ fn main() {
         return;
     }
 
-    // Set up audio device, use default config and device.
-    let host = cpal::default_host();
-    let device = host
-        .default_output_device()
-        .expect("No audio output device available.");
-
-    let mut supported_configs_range = device
-        .supported_output_configs()
-        .expect("error while querying configs");
-    let supported_config = supported_configs_range
-        .next()
-        .expect("no supported config?!")
-        .with_max_sample_rate();
-
-    let mut emu = Emulator::power_on(rom_file, supported_config.sample_rate().0, debug_enabled);
-
-    // Set up cpal audio stream
-    // let buf = emu.audio_buffer.clone();
-    // let err_fn = |err| error!("An error occurred on the output audio stream: {}", err);
-    // let sample_format = supported_config.sample_format();
-    // info!("Sound: ");
-    // info!("\t Device: {:?}", device.name().unwrap());
-    // info!("\t Sample format: {:?}", sample_format);
-    // info!("\t Sample rate: {:?}", supported_config.sample_rate().0);
-    // info!("\t Channels: {:?}", supported_config.channels());
-    // let config = supported_config.into();
-    // let stream = match sample_format {
-    //     SampleFormat::F32 => device.build_output_stream(
-    //         &config,
-    //         move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-    //             write_from_buffer::<f32>(data, buf.clone());
-    //         },
-    //         err_fn,
-    //     ),
-    //     SampleFormat::I16 => device.build_output_stream(
-    //         &config,
-    //         move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-    //             write_from_buffer::<i16>(data, buf.clone());
-    //         },
-    //         err_fn,
-    //     ),
-    //     SampleFormat::U16 => device.build_output_stream(
-    //         &config,
-    //         move |data: &mut [u16], _: &cpal::OutputCallbackInfo| {
-    //             write_from_buffer::<u16>(data, buf.clone());
-    //         },
-    //         err_fn,
-    //     ),
-    // }
-    // .unwrap();
+    let mut emu = Emulator::power_on(rom_file, debug_enabled);
 
     let mut window = Window::new(
         "Gabe Emulator",
@@ -162,20 +162,30 @@ fn main() {
     // Disable minifb's rate limiting
     window.limit_update_rate(None);
 
-    let mut timestamp = std::time::Instant::now();
+    let audio_driver = audio_driver::AudioDriver::new(gabe_core::SAMPLE_RATE, 100);
+
+    let mut audio_buffer_sink = audio_driver.sink();
+
+    // let time_source = SystemTimeSource::new();
+    let time_source = audio_driver.time_source();
+
+    let start_time_ns = time_source.time_ns();
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
+        let mut video_sink = MostRecentSink::new();
+        let mut audio_sink = SimpleAudioSink {
+            inner: VecDeque::new()
+        };
+
+        let target_emu_time_ns = time_source.time_ns() - start_time_ns;
+        let target_emu_cycles = target_emu_time_ns / CYCLE_TIME_NS;
+
         if emu.debugger.is_running() {
             let action = emu.debugger.update(&emu.gb);
             match action {
                 DebuggerState::Running => {
                     // Ignore frames
-                    let keys = get_key_states(&window);
-                    if keys.is_empty() {
-                        emu.gb.tick(None);
-                    } else {
-                        emu.gb.tick(Some(keys.as_slice()));
-                    }
+                    get_key_states(&window, &mut emu.gb);
                 }
                 DebuggerState::Stopping => {
                     emu.debugger.quit();
@@ -183,46 +193,28 @@ fn main() {
             }
             window.update();
         } else {
-            let keys = get_key_states(&window);
-            let keys_pressed = if keys.is_empty() {
-                None
-            } else {
-                Some(keys.as_slice())
-            };
+            while emu.emulated_cycles < target_emu_cycles { 
+                emu.emulated_cycles += emu.gb.step(&mut video_sink, &mut audio_sink) as u64;
+            }
 
-            let new_ts = std::time::Instant::now();
-            let dt = new_ts.duration_since(timestamp);
-            timestamp = new_ts;
-
-            if let Some(frame) = emu.gb.step_seconds(dt, keys_pressed) {
-                emu.current_frame = frame;
+            if let Some(frame) = video_sink.into_inner() {
+                let iter = frame.chunks(3);
                 // Convert the series of u8s into a series of RGB-encoded u32s
-                let iter = emu.current_frame.chunks(3);
-                let mut image_buffer: Vec<u32> = vec![];
-                for chunk in iter {
-                    let new_val = from_u8_rgb(chunk[0], chunk[1], chunk[2]);
-                    image_buffer.push(new_val);
-                }
+                let image_buffer: Vec<u32> = iter.map(|x| from_u8_rgb(x[0], x[1], x[2])).collect();
+                window.update_with_buffer(&image_buffer, 160, 144).unwrap();
+
+                get_key_states(&window, &mut emu.gb);
                 let keys = window.get_keys();
                 if keys.contains(&Key::LeftCtrl) && keys.contains(&Key::D) && debug_enabled {
                     // Fall back into debug mode on next update
                     println!("Received debug command, enabling debugger...");
                     emu.debugger.start();
                 }
-                window.update_with_buffer(&image_buffer, 160, 144).unwrap();
             }
-        }
-    }
-}
 
-fn write_from_buffer<T: Sample>(data: &mut [T], input_buf: Arc<Mutex<VecDeque<(i16, i16)>>>) {
-    let mut input_locked = input_buf.lock().unwrap();
-
-    for chunk in data.chunks_exact_mut(2) {
-        if let Some(v) = input_locked.pop_front() {
-            chunk[0] = Sample::from(&v.0);
-            chunk[1] = Sample::from(&v.1);
+            audio_buffer_sink.append(audio_sink.inner.as_slices().0);
         }
+        spin_sleep::sleep(std::time::Duration::from_millis(1));
     }
 }
 
@@ -238,18 +230,13 @@ fn disassemble_to_file(path: impl AsRef<Path>) -> Result<(), std::io::Error> {
     Ok(())
 }
 
-fn get_key_states(window: &Window) -> Vec<GbKeys> {
-    let mut ret: Vec<GbKeys> = vec![];
-    window.get_keys().iter().for_each(|key| match key {
-        Key::X => ret.push(GbKeys::A),
-        Key::Z => ret.push(GbKeys::B),
-        Key::Enter => ret.push(GbKeys::Start),
-        Key::Backspace => ret.push(GbKeys::Select),
-        Key::Up => ret.push(GbKeys::Up),
-        Key::Down => ret.push(GbKeys::Down),
-        Key::Left => ret.push(GbKeys::Left),
-        Key::Right => ret.push(GbKeys::Right),
-        _ => (),
-    });
-    ret
+fn get_key_states(window: &Window, gb: &mut Gameboy) {
+    gb.update_key_state(GbKeys::A, window.is_key_down(Key::X));
+    gb.update_key_state(GbKeys::B, window.is_key_down(Key::Z));
+    gb.update_key_state(GbKeys::Start, window.is_key_down(Key::Enter));
+    gb.update_key_state(GbKeys::Select, window.is_key_down(Key::Backspace));
+    gb.update_key_state(GbKeys::Up, window.is_key_down(Key::Up));
+    gb.update_key_state(GbKeys::Down, window.is_key_down(Key::Down));
+    gb.update_key_state(GbKeys::Left, window.is_key_down(Key::Left));
+    gb.update_key_state(GbKeys::Right, window.is_key_down(Key::Right));
 }
