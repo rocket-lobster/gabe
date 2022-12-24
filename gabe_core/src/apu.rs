@@ -60,6 +60,23 @@ struct SquareChannel1 {
     /// Bit 2-0 - "Wavelength"'s higher 3 bits (Write Only)
     nr14_freq_high_control: u8,
 
+    /// The period of the frequency timer for waveform generation.
+    /// Calculated every time the frequency is changed with the formula:
+    ///     Period = 4 * (2048 - frequency)
+    frequency_timer: u32,
+
+    /// The number of sweep steps needed before calculating the next frequency in the sweep.
+    /// Loaded from NR10 [6:4] on reaching zero or on a channel trigger.
+    sweep_timer: u8,
+
+    /// Internal flag set on a channel trigger. Set if the sweep pace or slope are
+    /// non-zero, otherwise cleared.
+    sweep_enabled: bool,
+
+    /// Internal frequency register that holds the frequencies currently being sweeped.
+    /// Set on channel trigger and updated each time the sweep is updated
+    sweep_shadow: u32,
+
     /// The volume of the channel, modified by the volume envelope if necessary
     /// Starts at NR12 [7:4] when channel is triggered
     current_volume: u8,
@@ -68,29 +85,16 @@ struct SquareChannel1 {
     volume_increasing: bool,
 
     /// The number of envelope steps needed before changing volume
+    /// Loaded from `envelope_period` when reaching 0 or on channel trigger
+    envelope_timer: u8,
+
+    /// The value reloaded into the envelope timer when it reaches zero
     /// Loaded from NR12 [2:0] on channel trigger
     envelope_period: u8,
 
-    /// Number of cycles into the envelope timer. Triggers a volume change every time
-    /// the value held by envelope_period is reached
-    envelope_cycles: u8,
-
     /// Loaded on channel trigger from NR11 [5:0], subtracted from 64
     /// If length is enabled, once period is reached, channel is disabled
-    length_period: u8,
-
-    /// Number of cycles into the length timer. Once it reaches the length_period,
-    /// the channel is disabled. Only incremented when NR14 [6] is enabled
-    length_cycles: u8,
-
-    /// The current cycle count used to synchronize the timing of waveform generation
-    /// with the rest of the system
-    frequency_cycles: u32,
-
-    /// The period of the frequency timer for waveform generation.
-    /// Calculated every time the frequency is changed with the formula:
-    ///     Period = 4 * (2048 - frequency)
-    frequency_period: u32,
+    length_timer: u8,
 
     /// The current location in the wave pattern given by wave_pattern
     wave_index: usize,
@@ -98,30 +102,61 @@ struct SquareChannel1 {
 
 impl SquareChannel1 {
     fn step_freq(&mut self) {
-        self.frequency_cycles += 1;
         // Check if the buffer needs to be updated with new samples to match the frequency
-        if self.frequency_cycles >= self.frequency_period {
-            self.frequency_cycles -= self.frequency_period;
-
+        if self.frequency_timer == 0 {
             // Move wave duty to next index slot
             self.wave_index = (self.wave_index + 1) % 8;
 
             // Reset Frequency period to match current frequency value
-            self.frequency_period = (2048
+            self.frequency_timer = (2048
                 - (((self.nr14_freq_high_control as u32 & 0b111) << 8)
                     | self.nr13_frequency_low as u32))
                 * 4;
+        }
+        self.frequency_timer -= 1;
+    }
+
+    fn step_sweep(&mut self) {
+        self.sweep_timer =  self.sweep_timer.saturating_sub(1);
+        if self.sweep_timer == 0
+            && self.sweep_enabled
+            && extract_bits(self.nr10_sweep_control, 6, 4) != 0x0
+        {
+            self.sweep_timer = extract_bits(self.nr10_sweep_control, 6, 4);
+            // Calculate new freq and check overflow
+            let mut freq =
+                (self.sweep_shadow >> extract_bits(self.nr10_sweep_control, 2, 0)) as i32;
+            if test_bit(self.nr10_sweep_control, 3) {
+                freq = -freq;
+            }
+            freq += self.sweep_shadow as i32;
+            if freq > 2047 || freq < 0 {
+                self.channel_enabled = false;
+            } else if extract_bits(self.nr10_sweep_control, 2, 0) != 0 {
+                // Write the new freq into shadow and NR13+NR14
+                self.sweep_shadow = freq as u32;
+                self.nr13_frequency_low = (self.sweep_shadow & 0xFF) as u8;
+                self.nr14_freq_high_control =
+                    (self.nr14_freq_high_control & 0xF8) | ((self.sweep_shadow >> 8) & 0x7) as u8;
+
+                // Freq calc and overflow check again
+                freq = (self.sweep_shadow >> extract_bits(self.nr10_sweep_control, 2, 0)) as i32;
+                if test_bit(self.nr10_sweep_control, 3) {
+                    freq = -freq;
+                }
+                freq += self.sweep_shadow as i32;
+                if freq > 2047 || freq < 0 {
+                    self.channel_enabled = false;
+                }
+            }
         }
     }
 
     fn step_envelope(&mut self) {
         if self.envelope_period != 0 {
-            if self.envelope_cycles < self.envelope_period {
-                self.envelope_cycles += 1;
-            }
-            if self.envelope_cycles == self.envelope_period {
-                self.envelope_cycles = 0;
-
+            self.envelope_timer -= 1;
+            if self.envelope_timer == 0 {
+                self.envelope_timer = self.envelope_period;
                 if self.current_volume < 0xF && self.volume_increasing {
                     self.current_volume += 1;
                 } else if self.current_volume > 0x0 && !self.volume_increasing {
@@ -132,10 +167,10 @@ impl SquareChannel1 {
     }
 
     fn step_length(&mut self) {
-        if test_bit(self.nr14_freq_high_control, 6) && (self.length_cycles < self.length_period) {
-            self.length_cycles += 1;
+        if test_bit(self.nr14_freq_high_control, 6) && (self.length_timer > 0) {
+            self.length_timer -= 1;
 
-            if self.length_cycles >= self.length_period {
+            if self.length_timer == 0 {
                 self.channel_enabled = false;
             }
         }
@@ -191,15 +226,38 @@ impl Memory for SquareChannel1 {
                     // Channel is triggered, init state
                     self.channel_enabled = true;
                     // Length counter set
-                    self.length_period = 64 - extract_bits(self.nr11_length_data, 5, 0);
-                    self.length_cycles = 0;
+                    self.length_timer = 64 - extract_bits(self.nr11_length_data, 5, 0);
                     // Reset frequency period
-                    self.frequency_period = (2048
+                    self.frequency_timer = (2048
                         - (((self.nr14_freq_high_control as u32 & 0b111) << 8)
                             | self.nr13_frequency_low as u32))
                         * 4;
+                    // Update sweep state
+                    self.sweep_shadow = ((self.nr14_freq_high_control as u32 & 0b111) << 8)
+                        | self.nr13_frequency_low as u32;
+                    self.sweep_timer = extract_bits(self.nr10_sweep_control, 6, 4);
+                    if extract_bits(self.nr10_sweep_control, 2, 0) != 0x0 {
+                        // Sweep shift is non-zero, set sweep-enable to true
+                        self.sweep_enabled = true;
+                        // Immediately perform frequency calc and overflow check
+                        let mut freq = (self.sweep_shadow
+                            >> extract_bits(self.nr10_sweep_control, 2, 0))
+                            as i32;
+                        if test_bit(self.nr10_sweep_control, 3) {
+                            freq = -freq;
+                        }
+                        freq += self.sweep_shadow as i32;
+                        if freq > 2047 {
+                            self.channel_enabled = false;
+                        }
+                    } else if self.sweep_timer != 0 {
+                        self.sweep_enabled = true;
+                    } else {
+                        self.sweep_enabled = false;
+                    }
                     // Reload envelope period
                     self.envelope_period = extract_bits(self.nr12_volume_control, 2, 0);
+                    self.envelope_timer = self.envelope_period;
                     // Reload current volume
                     self.current_volume = extract_bits(self.nr12_volume_control, 7, 4);
                     // Load envelope direction
@@ -267,15 +325,16 @@ impl Apu {
                 nr12_volume_control: 0xF3,
                 nr13_frequency_low: 0xFF,
                 nr14_freq_high_control: 0xBF,
-                frequency_period: 8192,
-                frequency_cycles: 0,
+                frequency_timer: 8192,
                 wave_index: 0,
+                sweep_timer: 0,
+                sweep_enabled: false,
+                sweep_shadow: 0,
                 current_volume: 0,
                 volume_increasing: false,
+                envelope_timer: 0,
                 envelope_period: 0,
-                envelope_cycles: 0,
-                length_period: 0,
-                length_cycles: 0,
+                length_timer: 0,
             },
             nr50_output_control: 0x77,
             nr51_channel_pan: 0xF3,
@@ -302,6 +361,7 @@ impl Apu {
                     }
                     if [2, 6].contains(&self.frame_cycle) {
                         // Update Freq Sweep
+                        self.square1.step_sweep();
                     }
                     if self.frame_cycle == 7 {
                         // Update volume envelope
@@ -317,7 +377,6 @@ impl Apu {
             }
         }
     }
-
 }
 
 impl Memory for Apu {

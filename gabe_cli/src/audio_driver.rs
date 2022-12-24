@@ -14,6 +14,7 @@ struct SampleBuffer {
     inner: Box<[i16]>,
     write_index: usize,
     read_index: usize,
+    count: usize,
     samples_read: u64,
     sample_rate: u32,
 }
@@ -25,6 +26,12 @@ impl SampleBuffer {
         self.inner[self.write_index] = value;
         self.write_index += 1;
 
+        self.count += 1;
+
+        if self.count >= self.inner.len() {
+            self.count = self.inner.len()
+        }
+
         if self.write_index >= self.inner.len() {
             self.write_index = 0;
         }
@@ -35,14 +42,19 @@ impl Iterator for SampleBuffer {
     type Item = i16;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let ret = self.inner[self.read_index];
-        self.read_index += 1;
-
-        if self.read_index >= self.inner.len() {
-            self.read_index = 0;
-        }
         self.samples_read += 1;
-        Some(ret)
+        if self.count != 0 {
+            let ret = self.inner[self.read_index];
+            self.read_index += 1;
+
+            if self.read_index >= self.inner.len() {
+                self.read_index = 0;
+            }
+            self.count -= 1;
+            Some(ret)
+        } else {
+            None
+        }
     }
 }
 
@@ -93,12 +105,12 @@ impl AudioDriver {
         let best_config = supported_configs_range
             .max_by(|x, y| x.cmp_default_heuristics(y))
             .expect("No supported output configs for device.")
-            .with_sample_rate(cpal::SampleRate(48000));
+            .with_sample_rate(cpal::SampleRate(sample_rate));
 
         let err_fn = |err| error!("An error occurred on the output audio stream: {}", err);
         let sample_format = best_config.sample_format();
         let buffer_samples =
-            (sample_rate * latency_ms / 1000 * best_config.channels() as u32) as usize;
+            (sample_rate * latency_ms / 1000 * 2) as usize;
         info!("Sound: ");
         info!("\t Device: {:?}", device.name().unwrap());
         info!("\t Device sample format: {:?}", sample_format);
@@ -110,6 +122,7 @@ impl AudioDriver {
             inner: vec![0; buffer_samples].into_boxed_slice(),
             samples_read: 0,
             sample_rate,
+            count: 0,
             write_index: 0,
             read_index: 0,
         }));

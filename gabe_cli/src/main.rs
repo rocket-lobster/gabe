@@ -9,7 +9,7 @@ use std::{
     fs::File,
     io::{Read, Write},
     path::Path,
-    time::{Instant, SystemTime}, alloc::System, collections::VecDeque,
+    time::{Instant, SystemTime, Duration}, alloc::System, collections::VecDeque,
 };
 
 use clap::{App, Arg};
@@ -196,7 +196,7 @@ fn main() {
             while emu.emulated_cycles < target_emu_cycles { 
                 emu.emulated_cycles += emu.gb.step(&mut video_sink, &mut audio_sink) as u64;
             }
-            get_key_states(&window, &mut emu.gb);
+            
             if let Some(frame) = video_sink.into_inner() {
                 let iter = frame.chunks(3);
                 // Convert the series of u8s into a series of RGB-encoded u32s
@@ -204,6 +204,7 @@ fn main() {
                 window.update_with_buffer(&image_buffer, 160, 144).unwrap();
                 
                 let keys = window.get_keys();
+                get_key_states(&window, &mut emu.gb);
                 if keys.contains(&Key::LeftCtrl) && keys.contains(&Key::D) && debug_enabled {
                     // Fall back into debug mode on next update
                     println!("Received debug command, enabling debugger...");
