@@ -196,14 +196,13 @@ fn main() {
             while emu.emulated_cycles < target_emu_cycles { 
                 emu.emulated_cycles += emu.gb.step(&mut video_sink, &mut audio_sink) as u64;
             }
-
+            get_key_states(&window, &mut emu.gb);
             if let Some(frame) = video_sink.into_inner() {
                 let iter = frame.chunks(3);
                 // Convert the series of u8s into a series of RGB-encoded u32s
                 let image_buffer: Vec<u32> = iter.map(|x| from_u8_rgb(x[0], x[1], x[2])).collect();
                 window.update_with_buffer(&image_buffer, 160, 144).unwrap();
-
-                get_key_states(&window, &mut emu.gb);
+                
                 let keys = window.get_keys();
                 if keys.contains(&Key::LeftCtrl) && keys.contains(&Key::D) && debug_enabled {
                     // Fall back into debug mode on next update
