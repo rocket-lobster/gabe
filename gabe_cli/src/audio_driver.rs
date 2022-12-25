@@ -11,7 +11,7 @@ use std::sync::*;
 /// A ring buffer of audio samples
 /// Tracks sample count in order to provide a time source
 struct SampleBuffer {
-    inner: Box<[i16]>,
+    inner: Box<[f32]>,
     write_index: usize,
     read_index: usize,
     count: usize,
@@ -22,7 +22,7 @@ struct SampleBuffer {
 impl SampleBuffer {
     /// Pushes the given sample into the ring buffer.
     /// Increments the internal sample counter.
-    fn push(&mut self, value: i16) {
+    fn push(&mut self, value: f32) {
         self.inner[self.write_index] = value;
         self.write_index += 1;
 
@@ -39,7 +39,7 @@ impl SampleBuffer {
 }
 
 impl Iterator for SampleBuffer {
-    type Item = i16;
+    type Item = f32;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.samples_read += 1;
@@ -119,7 +119,7 @@ impl AudioDriver {
 
         let config = best_config.config();
         let audio_buffer = Arc::new(Mutex::new(SampleBuffer {
-            inner: vec![0; buffer_samples].into_boxed_slice(),
+            inner: vec![0.0; buffer_samples].into_boxed_slice(),
             samples_read: 0,
             sample_rate,
             count: 0,
@@ -221,8 +221,8 @@ impl LinearResampler {
         LinearResampler {
             from_rate: from_sample_rate / sample_rate_gcd,
             to_rate: to_sample_rate / sample_rate_gcd,
-            current_from: (0, 0),
-            next_from: (0, 0),
+            current_from: (0.0, 0.0),
+            next_from: (0.0, 0.0),
             from_fractional_pos: 0,
             current_frame_channel: 0,
         }
@@ -230,11 +230,10 @@ impl LinearResampler {
 
     /// Generates a new sample from the given `input` samples `Iterator` object.
     /// Uses linear interpolation to either upsample or downsample from the input
-    fn next(&mut self, input: &mut dyn Iterator<Item = i16>) -> i16 {
+    fn next(&mut self, input: &mut dyn Iterator<Item = f32>) -> f32 {
         // Helper function for interpolating between values
-        fn interpolate(a: i16, b: i16, num: u32, denom: u32) -> i16 {
-            (((a as i32) * ((denom - num) as i32) + (b as i32) * (num as i32)) / (denom as i32))
-                as i16
+        fn interpolate(a: f32, b: f32, num: u32, denom: u32) -> f32 {
+            (a * ((denom - num) as f32) + b * (num as f32)) / (denom as f32)
         }
 
         // Check which channel to process of the current frame
@@ -266,8 +265,8 @@ impl LinearResampler {
                 self.from_fractional_pos -= self.to_rate;
                 self.current_from = self.next_from;
 
-                let left = input.next().unwrap_or(0);
-                let right = input.next().unwrap_or(0);
+                let left = input.next().unwrap_or(0.0);
+                let right = input.next().unwrap_or(0.0);
                 self.next_from = (left, right);
             }
         }

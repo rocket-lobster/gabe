@@ -17,4 +17,4 @@ mod wram;
 
 pub const CLOCK_RATE: u32 = 4_194_304;
 pub const CGB_CLOCK_RATE: u32 = CLOCK_RATE * 2;
-pub const SAMPLE_RATE: u32 = CLOCK_RATE / 64; // 262.144 KHz sample rate
+pub const SAMPLE_RATE: u32 = CLOCK_RATE / 16; // 262.144 KHz sample rate

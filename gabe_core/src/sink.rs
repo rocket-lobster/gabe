@@ -12,4 +12,4 @@ pub trait SinkRef<T: ?Sized> {
 pub type VideoFrame = Box<[u8]>;
 
 /// A frame of audio data, consisting of (Left, Right) sample data of i16
-pub type AudioFrame = (i16, i16);
+pub type AudioFrame = (f32, f32);

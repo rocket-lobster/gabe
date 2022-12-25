@@ -1,6 +1,3 @@
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 use super::sink::*;
 use super::{mmu::Memory, util::bit::*};
 
@@ -8,7 +5,7 @@ use super::{mmu::Memory, util::bit::*};
 const SAMPLE_RATE: u32 = super::SAMPLE_RATE;
 
 // 4.19 MHz / 65.536 KHz
-const SAMPLE_RATE_PERIOD: u32 = 64;
+const SAMPLE_RATE_PERIOD: u32 = super::CLOCK_RATE / SAMPLE_RATE;
 
 // 4.19 MHz / 512 Hz
 const FRAME_SEQ_PERIOD: u32 = 8192;
@@ -176,7 +173,7 @@ impl SquareChannel1 {
         }
     }
 
-    fn get_amp(&self) -> i16 {
+    fn get_amp(&self) -> f32 {
         if self.dac_enabled && self.channel_enabled {
             let pattern = match extract_bits(self.nr11_length_data, 7, 6) {
                 0x0 => 0b0000_0001, // 12.5%
@@ -186,13 +183,9 @@ impl SquareChannel1 {
                 _ => unreachable!(),
             };
 
-            if ((pattern >> self.wave_index) & 0x1) != 0x0 {
-                self.current_volume as i16 * (i16::MAX / 0xF)
-            } else {
-                self.current_volume as i16 * (i16::MIN / 0xF)
-            }
+            ((((pattern >> self.wave_index) & 0x1) as f32 * (self.current_volume as f32)) / 7.5) - 1.0 
         } else {
-            0
+            0.0
         }
     }
 }
@@ -214,7 +207,10 @@ impl Memory for SquareChannel1 {
         assert!((0xFF10..=0xFF14).contains(&addr));
         match addr {
             0xFF10 => self.nr10_sweep_control = val,
-            0xFF11 => self.nr11_length_data = val,
+            0xFF11 => {
+                self.nr11_length_data = val;
+                self.length_timer = 64 - extract_bits(self.nr11_length_data, 5, 0);
+            }
             0xFF12 => {
                 self.nr12_volume_control = val;
                 self.dac_enabled = extract_bits(val, 7, 3) != 0x0;
@@ -226,7 +222,9 @@ impl Memory for SquareChannel1 {
                     // Channel is triggered, init state
                     self.channel_enabled = true;
                     // Length counter set
-                    self.length_timer = 64 - extract_bits(self.nr11_length_data, 5, 0);
+                    if self.length_timer == 0 {
+                        self.length_timer = 64;
+                    }
                     // Reset frequency period
                     self.frequency_timer = (2048
                         - (((self.nr14_freq_high_control as u32 & 0b111) << 8)
@@ -262,6 +260,10 @@ impl Memory for SquareChannel1 {
                     self.current_volume = extract_bits(self.nr12_volume_control, 7, 4);
                     // Load envelope direction
                     self.volume_increasing = test_bit(val, 3);
+
+                    if !self.dac_enabled {
+                        self.channel_enabled = false;
+                    }
                 }
             }
             _ => unreachable!(),
@@ -375,7 +377,7 @@ impl SquareChannel2 {
         }
     }
 
-    fn get_amp(&self) -> i16 {
+    fn get_amp(&self) -> f32 {
         if self.dac_enabled && self.channel_enabled {
             let pattern = match extract_bits(self.nr21_length_data, 7, 6) {
                 0x0 => 0b0000_0001, // 12.5%
@@ -385,13 +387,9 @@ impl SquareChannel2 {
                 _ => unreachable!(),
             };
 
-            if ((pattern >> self.wave_index) & 0x1) != 0x0 {
-                self.current_volume as i16 * (i16::MAX / 0xF)
-            } else {
-                self.current_volume as i16 * (i16::MIN / 0xF)
-            }
+            ((((pattern >> self.wave_index) & 0x1) as f32 * (self.current_volume as f32)) / 7.5) - 1.0 
         } else {
-            0
+            0.0
         }
     }
 }
@@ -411,7 +409,10 @@ impl Memory for SquareChannel2 {
     fn write_byte(&mut self, addr: u16, val: u8) {
         assert!((0xFF16..=0xFF19).contains(&addr));
         match addr {
-            0xFF16 => self.nr21_length_data = val,
+            0xFF16 => {
+                self.nr21_length_data = val;
+                self.length_timer = 64 - extract_bits(self.nr21_length_data, 5, 0);
+            }
             0xFF17 => {
                 self.nr22_volume_control = val;
                 self.dac_enabled = extract_bits(val, 7, 3) != 0x0;
@@ -423,7 +424,9 @@ impl Memory for SquareChannel2 {
                     // Channel is triggered, init state
                     self.channel_enabled = true;
                     // Length counter set
-                    self.length_timer = 64 - extract_bits(self.nr21_length_data, 5, 0);
+                    if self.length_timer == 0 {
+                        self.length_timer = 64;
+                    }
                     // Reset frequency period
                     self.frequency_timer = (2048
                         - (((self.nr24_freq_high_control as u32 & 0b111) << 8)
@@ -436,8 +439,173 @@ impl Memory for SquareChannel2 {
                     self.current_volume = extract_bits(self.nr22_volume_control, 7, 4);
                     // Load envelope direction
                     self.volume_increasing = test_bit(val, 3);
+
+                    if !self.dac_enabled {
+                        self.channel_enabled = false;
+                    }
                 }
             }
+            _ => unreachable!(),
+        }
+    }
+}
+
+struct WaveChannel {
+    /// Flag indicating if the sound is currently playing
+    /// Set to true on a NR34 b7 trigger write, and reported by NR52
+    channel_enabled: bool,
+
+    /// CH3 DAC Enable
+    /// NR30 ($FF1A)
+    /// Bit 7 - Sound Channel 3 DAC  (0=Off, 1=On)
+    nr30_dac_enable: u8,
+
+    /// CH3 Length Timer (W)
+    /// NR31 ($FF1B)
+    /// Bit 7-0 - length timer
+    nr31_length_timer: u8,
+
+    /// CH3 Output Level (R/W)
+    /// NR32 ($FF1C)
+    /// Bits 6-5 - Output level selection
+    ///     00 - Mute (No sound)
+    ///     01 - 100% volume (use samples read from Wave RAM as-is)
+    ///     10 - 50% volume (shift samples read from Wave RAM right once)
+    ///     11 - 25% volume (shift samples read from Wave RAM right twice)
+    nr32_output_level: u8,
+
+    /// NR33 CH3 Wavelength Low (W)
+    /// Lower 8-bits of frequency (wavelength) data
+    nr33_frequency_low: u8,
+
+    /// NR34 CH3 Wavelength High / Control (W)
+    /// Bit 7   - Trigger (1=Restart channel)  (Write Only)
+    /// Bit 6   - Sound Length enable          (Read/Write)
+    ///           (1=Stop output when length in NR11 expires)
+    /// Bit 2-0 - "Wavelength"'s higher 3 bits (Write Only)
+    nr34_freq_high_control: u8,
+
+    /// The period of the frequency timer for waveform generation.
+    /// Calculated every time the frequency is changed with the formula:
+    ///     Period = 2 * (2048 - frequency)
+    frequency_timer: u32,
+
+    /// Loaded on channel trigger from NR31 [7:0], subtracted from 256
+    /// If length is enabled, once period is reached, channel is disabled
+    length_timer: u16,
+
+    /// The current 4-bit sample to output to the DAC. Loaded from RAM
+    /// every frequency timer clock.
+    sample_buffer: u8,
+
+    /// The ram containing a sample waveform of 32 4-bit samples
+    /// Indexed into by
+    wave_ram: [u8; 16],
+
+    /// The current location in the wave pattern given by wave_pattern
+    wave_index: usize,
+}
+
+impl WaveChannel {
+    fn step_freq(&mut self) {
+        // Check if the buffer needs to be updated with new samples to match the frequency
+        if self.frequency_timer == 0 {
+            // Move wave duty to next index slot
+            self.wave_index = (self.wave_index + 1) % 32;
+
+            self.sample_buffer = {
+                let entry = self.wave_ram[self.wave_index / 2];
+                if self.wave_index % 2 == 0 {
+                    (entry >> 4) & 0xF
+                } else {
+                    entry & 0xF
+                }
+            };
+
+            // Reset Frequency period to match current frequency value
+            self.frequency_timer = (2048
+                - (((self.nr34_freq_high_control as u32 & 0b111) << 8)
+                    | self.nr33_frequency_low as u32))
+                * 2;
+        }
+        self.frequency_timer -= 1;
+    }
+
+    fn step_length(&mut self) {
+        if test_bit(self.nr34_freq_high_control, 6) && (self.length_timer > 0) {
+            self.length_timer -= 1;
+
+            if self.length_timer == 0 {
+                self.channel_enabled = false;
+            }
+        }
+    }
+
+    fn get_amp(&self) -> f32 {
+        if test_bit(self.nr30_dac_enable, 7) && self.channel_enabled {
+            let vol_shift = extract_bits(self.nr32_output_level, 6, 5);
+            if vol_shift != 0 {
+                (((self.sample_buffer >> (vol_shift - 1)) as f32) / 7.5) - 1.0 
+            } else {
+                0.0
+            }
+        } else {
+            0.0
+        }
+    }
+}
+
+impl Memory for WaveChannel {
+    fn read_byte(&self, addr: u16) -> u8 {
+        assert!((0xFF1A..=0xFF1E).contains(&addr) || (0xFF30..=0xFF3F).contains(&addr));
+        match addr {
+            0xFF1A => self.nr30_dac_enable | 0x7F,
+            0xFF1B => 0xFF,
+            0xFF1C => self.nr32_output_level | 0x9F,
+            0xFF1D => 0xFF,
+            0xFF1E => self.nr34_freq_high_control | 0xBF,
+            0xFF30..=0xFF3F => self.wave_ram[(addr - 0xFF30) as usize],
+            _ => unreachable!(),
+        }
+    }
+
+    fn write_byte(&mut self, addr: u16, val: u8) {
+        assert!((0xFF1A..=0xFF1E).contains(&addr) || (0xFF30..=0xFF3F).contains(&addr));
+        match addr {
+            0xFF1A => {
+                self.nr30_dac_enable = val;
+                if !test_bit(val, 7) {
+                    self.channel_enabled = false;
+                }
+            }
+            0xFF1B => {
+                self.nr31_length_timer = val;
+                self.length_timer = 256 - self.nr31_length_timer as u16;
+            }
+            0xFF1C => self.nr32_output_level = val,
+            0xFF1D => self.nr33_frequency_low = val,
+            0xFF1E => {
+                self.nr34_freq_high_control = val;
+                if test_bit(val, 7) {
+                    self.channel_enabled = true;
+                    // Length counter set
+                    if self.length_timer == 0 {
+                        self.length_timer = 256;
+                    }
+                    // Reset frequency period
+                    self.frequency_timer = (2048
+                        - (((self.nr34_freq_high_control as u32 & 0b111) << 8)
+                            | self.nr33_frequency_low as u32))
+                        * 2;
+                    // Reset wave index
+                    self.wave_index = 0;
+                    
+                    if !test_bit(self.nr30_dac_enable, 7) {
+                        self.channel_enabled = false;
+                    }
+                }
+            }
+            0xFF30..=0xFF3F => self.wave_ram[(addr - 0xFF30) as usize] = val,
             _ => unreachable!(),
         }
     }
@@ -477,6 +645,10 @@ pub struct Apu {
     /// Sound Channel 2 - Pulse
     /// NR21-NR24 ($FF16 - $FF19)
     square2: SquareChannel2,
+
+    /// Sound Channel 3 - Wave
+    /// NR30-NR34, Wave RAM ($FF1A - $FF1E, $FF30 - $FF3F)
+    wave: WaveChannel,
 
     /// The current cycle count in CPU cycles at 4.19 MHz
     /// Used to step the frame sequencer and determine
@@ -529,6 +701,19 @@ impl Apu {
                 length_timer: 0,
                 wave_index: 0,
             },
+            wave: WaveChannel {
+                channel_enabled: false,
+                nr30_dac_enable: 0x7F,
+                nr31_length_timer: 0xFF,
+                nr32_output_level: 0x9F,
+                nr33_frequency_low: 0xFF,
+                nr34_freq_high_control: 0xBF,
+                frequency_timer: 0,
+                length_timer: 0,
+                sample_buffer: 0,
+                wave_ram: [0; 16],
+                wave_index: 1,
+            },
             nr50_output_control: 0x77,
             nr51_channel_pan: 0xF3,
             all_sound_on: true,
@@ -544,15 +729,17 @@ impl Apu {
 
                 self.square1.step_freq();
                 self.square2.step_freq();
+                self.wave.step_freq();
 
-                if self.cycle_count >= 8192 {
+                if self.cycle_count >= FRAME_SEQ_PERIOD {
                     // Increment the number of frame sequencer clocks
-                    self.cycle_count -= 8192;
+                    self.cycle_count -= FRAME_SEQ_PERIOD;
                     self.frame_cycle = (self.frame_cycle + 1) % 8;
                     if [0, 2, 4, 6].contains(&self.frame_cycle) {
                         // Update length counter if enabled
                         self.square1.step_length();
                         self.square2.step_length();
+                        self.wave.step_length();
                     }
                     if [2, 6].contains(&self.frame_cycle) {
                         // Update Freq Sweep
@@ -568,34 +755,37 @@ impl Apu {
                 if self.cycle_count % SAMPLE_RATE_PERIOD == 0 {
                     // Reached period needed to generate a sample
                     let left_amp = {
-                        let mut amp_acc: i32 = 0;
-                        let mut acc_count = 0;
+                        let mut amp_acc: f32 = 0.0;
                         if test_bit(self.nr51_channel_pan, 4) {
-                            amp_acc += self.square1.get_amp() as i32;
-                            acc_count += 1;
+                            amp_acc += self.square1.get_amp();
                         }
                         if test_bit(self.nr51_channel_pan, 5) {
-                            amp_acc += self.square2.get_amp() as i32;
-                            acc_count += 1;
+                            amp_acc += self.square2.get_amp();
                         }
-                        (amp_acc / acc_count) as i16
+                        if test_bit(self.nr51_channel_pan, 6) {
+                            amp_acc += self.wave.get_amp();
+                        }
+                        amp_acc / 4.0
                     };
                     let right_amp = {
-                        let mut amp_acc: i32 = 0;
-                        let mut acc_count = 0;
+                        let mut amp_acc: f32 = 0.0;
                         if test_bit(self.nr51_channel_pan, 0) {
-                            amp_acc += self.square1.get_amp() as i32;
-                            acc_count += 1;
+                            amp_acc += self.square1.get_amp();
                         }
                         if test_bit(self.nr51_channel_pan, 1) {
-                            amp_acc += self.square2.get_amp() as i32;
-                            acc_count += 1;
+                            amp_acc += self.square2.get_amp();
                         }
-                        (amp_acc / acc_count) as i16
+                        if test_bit(self.nr51_channel_pan, 2) {
+                            amp_acc += self.wave.get_amp();
+                        }
+                        amp_acc / 4.0
                     };
-                    let left_vol = (extract_bits(self.nr50_output_control, 6, 4) + 1) as f32 / 8.0;
-                    let right_vol = (extract_bits(self.nr50_output_control, 2, 0) + 1) as f32 / 8.0;
-                    audio_sink.append(((left_amp as f32 * left_vol) as i16, (right_amp as f32 * right_vol) as i16));
+                    let left_vol = (extract_bits(self.nr50_output_control, 6, 4) + 1) as f32 / 7.0;
+                    let right_vol = (extract_bits(self.nr50_output_control, 2, 0) + 1) as f32 / 7.0;
+                    audio_sink.append((
+                        (left_amp * left_vol),
+                        (right_amp * right_vol),
+                    ));
                 }
             }
         }
@@ -608,6 +798,7 @@ impl Memory for Apu {
         match addr {
             0xFF10..=0xFF14 => self.square1.read_byte(addr),
             0xFF16..=0xFF19 => self.square2.read_byte(addr),
+            0xFF1A..=0xFF1E => self.wave.read_byte(addr),
             0xFF24 => self.nr50_output_control,
             0xFF25 => self.nr51_channel_pan,
             0xFF26 => {
@@ -621,8 +812,12 @@ impl Memory for Apu {
                 if self.square2.channel_enabled {
                     ret = set_bit(ret, 1);
                 }
+                if self.wave.channel_enabled {
+                    ret = set_bit(ret, 2);
+                }
                 ret
             }
+            0xFF30..=0xFF3F => self.wave.read_byte(addr),
             _ => {
                 debug!("Unassigned APU memory location {:04X}", addr);
                 0
@@ -634,9 +829,11 @@ impl Memory for Apu {
         match addr {
             0xFF10..=0xFF14 => self.square1.write_byte(addr, val),
             0xFF16..=0xFF19 => self.square2.write_byte(addr, val),
+            0xFF1A..=0xFF1E => self.wave.write_byte(addr, val),
             0xFF24 => self.nr50_output_control = val,
             0xFF25 => self.nr51_channel_pan = val,
             0xFF26 => self.all_sound_on = val & 0x80 != 0, // Only bit 7 is writable
+            0xFF30..=0xFF3F => self.wave.write_byte(addr, val),
             _ => debug!("Unassigned APU memory location {:04X}", addr),
         }
     }
