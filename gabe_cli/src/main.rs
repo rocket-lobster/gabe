@@ -17,7 +17,7 @@ use clap::{App, Arg};
 use debugger::{Debugger, DebuggerState};
 use minifb::{Key, ScaleMode, Window, WindowOptions, KeyRepeat};
 
-const CYCLE_TIME_NS: u64 = 238;
+const CYCLE_TIME_NS: f32 = 238.418579102;
 
 struct SystemTimeSource {
     start: Instant
@@ -178,7 +178,7 @@ fn main() {
         };
 
         let target_emu_time_ns = time_source.time_ns() - start_time_ns;
-        let target_emu_cycles = target_emu_time_ns / CYCLE_TIME_NS;
+        let target_emu_cycles = (target_emu_time_ns as f32 / CYCLE_TIME_NS).floor() as u64;
 
         if emu.debugger.is_running() {
             let action = emu.debugger.update(&emu.gb);
