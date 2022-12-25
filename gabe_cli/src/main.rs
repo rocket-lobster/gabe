@@ -149,7 +149,7 @@ fn main() {
     let start_time_ns = time_source.time_ns();
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
-        let mut video_sink = video_sinks::BlendVideoSink::new();
+        let mut video_sink = video_sinks::MostRecentSink::new();
         let mut audio_sink = SimpleAudioSink {
             inner: VecDeque::new()
         };
@@ -172,20 +172,20 @@ fn main() {
         } else {
             while emu.emulated_cycles < target_emu_cycles { 
                 emu.emulated_cycles += emu.gb.step(&mut video_sink, &mut audio_sink) as u64;
-            }
             
-            if let Some(frame) = video_sink.into_inner() {
-                let iter = frame.chunks(3);
-                // Convert the series of u8s into a series of RGB-encoded u32s
-                let image_buffer: Vec<u32> = iter.map(|x| from_u8_rgb(x[0], x[1], x[2])).collect();
-                window.update_with_buffer(&image_buffer, 160, 144).unwrap();
-                
-                let keys = window.get_keys();
-                get_key_states(&window, &mut emu.gb);
-                if keys.contains(&Key::LeftCtrl) && keys.contains(&Key::D) && debug_enabled {
-                    // Fall back into debug mode on next update
-                    println!("Received debug command, enabling debugger...");
-                    emu.debugger.start();
+                if let Some(frame) = video_sink.get_frame() {
+                    let iter = frame.chunks(3);
+                    // Convert the series of u8s into a series of RGB-encoded u32s
+                    let image_buffer: Vec<u32> = iter.map(|x| from_u8_rgb(x[0], x[1], x[2])).collect();
+                    window.update_with_buffer(&image_buffer, 160, 144).unwrap();
+                    
+                    let keys = window.get_keys();
+                    get_key_states(&window, &mut emu.gb);
+                    if keys.contains(&Key::LeftCtrl) && keys.contains(&Key::D) && debug_enabled {
+                        // Fall back into debug mode on next update
+                        println!("Received debug command, enabling debugger...");
+                        emu.debugger.start();
+                    }
                 }
             }
 
