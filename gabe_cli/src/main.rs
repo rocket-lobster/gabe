@@ -1,4 +1,5 @@
 mod audio_driver;
+mod video_sinks;
 mod debugger;
 mod time_source;
 
@@ -33,30 +34,6 @@ impl TimeSource for SystemTimeSource {
     fn time_ns(&self) -> u64 {
         let elapsed = self.start.elapsed();
         elapsed.as_secs() * 1_000_000_000 + (elapsed.subsec_nanos() as u64)
-    }
-}
-
-struct MostRecentSink {
-    inner: Option<VideoFrame>,
-}
-
-impl MostRecentSink {
-    fn new() -> Self {
-        MostRecentSink { inner: None }
-    }
-
-    fn has_frame(&self) -> bool {
-        self.inner.is_some()
-    }
-
-    fn into_inner(self) -> Option<VideoFrame> {
-        self.inner
-    }
-}
-
-impl Sink<VideoFrame> for MostRecentSink {
-    fn append(&mut self, value: VideoFrame) {
-        self.inner = Some(value);
     }
 }
 
@@ -172,7 +149,7 @@ fn main() {
     let start_time_ns = time_source.time_ns();
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
-        let mut video_sink = MostRecentSink::new();
+        let mut video_sink = video_sinks::BlendVideoSink::new();
         let mut audio_sink = SimpleAudioSink {
             inner: VecDeque::new()
         };
