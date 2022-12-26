@@ -1,4 +1,4 @@
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::Read;
 use std::path::Path;
 use std::{io, panic};
@@ -73,7 +73,8 @@ pub trait Memory {
 /// and then each block provides the services necessary when updated. MMU only handles
 /// reading and writing into each block, no logic is performed otherwise.
 pub struct Mmu {
-    cart: Box<dyn Cartridge>,
+    pub cart: Box<dyn Cartridge>,
+    save_file: File,
     apu: Apu,
     vram: Vram,
     wram: Wram,
@@ -91,14 +92,19 @@ impl Mmu {
     /// Initializes the MMU with the given ROM path.
     /// Opens the given file and reads cartridge header information to find
     /// the MBC type.
-    pub fn power_on(path: impl AsRef<Path>) -> io::Result<Self> {
+    pub fn power_on(rom_path: impl AsRef<Path>, save_path: impl AsRef<Path>) -> io::Result<Self> {
         use super::cartridge::mbc0::Mbc0;
         use super::cartridge::mbc1::Mbc1;
         use super::cartridge::mbc2::Mbc2;
 
-        let mut f = File::open(path.as_ref())?;
+        let mut rom_file = File::open(rom_path.as_ref())?;
+        let mut save_file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(save_path.as_ref())?;
         let mut rom_data = Vec::new();
-        f.read_to_end(&mut rom_data)?;
+        rom_file.read_to_end(&mut rom_data)?;
         let title =
             std::str::from_utf8(&rom_data[0x134..0x13F]).map_or_else(|_| "Invalid Title", |v| v);
         let rom_size = rom_data[0x148];
@@ -114,7 +120,7 @@ impl Mmu {
             0x5 => info!("\tRAM Size: 64 KiB"),
             _ => info!("\tRAM Size: Unknown"),
         };
-        let cart: Box<dyn Cartridge> = match rom_data[0x147] {
+        let mut cart: Box<dyn Cartridge> = match rom_data[0x147] {
             0x00 => {
                 info!("\tMBC Type: MBC0/No MBC.");
                 Box::new(Mbc0::power_on(rom_data))
@@ -141,8 +147,12 @@ impl Mmu {
             }
             _ => unimplemented!("MBC value {:02X} not supported!", rom_data[0x147]),
         };
+        if let Err(e) = cart.read_save_file(&mut save_file) {
+            info!("Save file will not be written: {}", e);
+        }
         let mmu = Mmu {
             cart,
+            save_file,
             apu: Apu::power_on(),
             vram: Vram::power_on(),
             wram: Wram::power_on(),
@@ -165,7 +175,12 @@ impl Mmu {
     /// block, for the CPU to handle on the next fetch.
     /// If a frame was completed during execution, return `FrameData` to caller,
     /// otherwise return `None`
-    pub fn update(&mut self, cycles: u32, video_sink: &mut dyn Sink<VideoFrame>, audio_sink: &mut dyn Sink<AudioFrame>) {
+    pub fn update(
+        &mut self,
+        cycles: u32,
+        video_sink: &mut dyn Sink<VideoFrame>,
+        audio_sink: &mut dyn Sink<AudioFrame>,
+    ) {
         if self.dma_state != DmaState::Stopped {
             self.dma_state = self.run_dma(cycles);
         }
@@ -327,6 +342,16 @@ impl Memory for Mmu {
                 0xFFFF => self.ie = val,
                 _ => self.unassigned_write(addr, val),
             }
+        }
+    }
+}
+
+impl Drop for Mmu {
+    fn drop(&mut self) {
+        if let Err(e) = self.cart.write_save_file(&mut self.save_file) {
+            info!("Save file not written: {}", e);
+        } else {
+            info!("Save file written.");
         }
     }
 }

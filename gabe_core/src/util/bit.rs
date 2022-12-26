@@ -23,7 +23,7 @@ pub fn extract_bits(val: u8, msb: u8, lsb: u8) -> u8 {
     assert!(msb < 8 && lsb < 8 && msb >= lsb);
     let mut ret = 0;
     let mut mask = 0b1;
-    for i in lsb ..= msb {
+    for i in lsb..=msb {
         if test_bit(val, i) {
             ret |= mask;
         }

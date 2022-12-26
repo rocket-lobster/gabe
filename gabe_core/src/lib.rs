@@ -1,15 +1,15 @@
 #[macro_use]
 extern crate log;
 
-pub mod gb;
-pub mod disassemble;
-pub mod sink;
 mod apu;
 mod cartridge;
 mod cpu;
+pub mod disassemble;
+pub mod gb;
 mod joypad;
 mod mmu;
 mod serial;
+pub mod sink;
 mod timer;
 mod util;
 mod vram;

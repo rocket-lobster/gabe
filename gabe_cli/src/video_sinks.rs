@@ -57,9 +57,17 @@ impl BlendVideoSink {
 impl Sink<VideoFrame> for BlendVideoSink {
     fn append(&mut self, value: VideoFrame) {
         if self.inner.is_some() {
-            let new_frame: VideoFrame = self.inner.as_mut().unwrap().iter().zip(value.iter()).map(|(x1, x2)| {
-                ((*x2 as u16 + (self.frames_blended * *x1 as u16)) / (self.frames_blended + 1)) as u8
-            }).collect();
+            let new_frame: VideoFrame = self
+                .inner
+                .as_mut()
+                .unwrap()
+                .iter()
+                .zip(value.iter())
+                .map(|(x1, x2)| {
+                    ((*x2 as u16 + (self.frames_blended * *x1 as u16)) / (self.frames_blended + 1))
+                        as u8
+                })
+                .collect();
             self.inner = Some(new_frame);
             self.frames_blended += 1;
         } else {

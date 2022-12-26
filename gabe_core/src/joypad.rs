@@ -89,10 +89,7 @@ mod joypad_tests {
         joy.set_key_pressed(GbKeys::A, false);
         joy.set_key_pressed(GbKeys::B, true);
         joy.set_key_pressed(GbKeys::Start, true);
-        assert_eq!(
-            joy.update().is_some(),
-            true
-        );
+        assert_eq!(joy.update().is_some(), true);
         assert_eq!(joy.read_byte(0xFF00), 0b1101_0101);
 
         joy.set_key_pressed(GbKeys::B, false);
@@ -100,18 +97,10 @@ mod joypad_tests {
         joy.set_key_pressed(GbKeys::Select, true);
         joy.set_key_pressed(GbKeys::A, true);
         joy.set_key_pressed(GbKeys::Down, true);
-        assert_eq!(
-            joy.update()
-                .is_some(),
-            true
-        );
+        assert_eq!(joy.update().is_some(), true);
         assert_eq!(joy.read_byte(0xFF00), 0b1101_1010);
 
-        assert_eq!(
-            joy.update()
-                .is_some(),
-            false
-        );
+        assert_eq!(joy.update().is_some(), false);
         assert_eq!(joy.read_byte(0xFF00), 0b1101_1010);
 
         joy.set_key_pressed(GbKeys::Select, false);
@@ -133,26 +122,17 @@ mod joypad_tests {
         joy.set_key_pressed(GbKeys::Up, false);
         joy.set_key_pressed(GbKeys::Down, true);
         joy.set_key_pressed(GbKeys::Left, true);
-        assert_eq!(
-            joy.update().is_some(),
-            true
-        );
+        assert_eq!(joy.update().is_some(), true);
         assert_eq!(joy.read_byte(0xFF00), 0b1110_0101);
 
         joy.set_key_pressed(GbKeys::Down, false);
         joy.set_key_pressed(GbKeys::Left, false);
         joy.set_key_pressed(GbKeys::Right, true);
         joy.set_key_pressed(GbKeys::A, true);
-        assert_eq!(
-            joy.update().is_some(),
-            true
-        );
+        assert_eq!(joy.update().is_some(), true);
         assert_eq!(joy.read_byte(0xFF00), 0b1110_1110);
 
-        assert_eq!(
-            joy.update().is_some(),
-            false
-        );
+        assert_eq!(joy.update().is_some(), false);
         assert_eq!(joy.read_byte(0xFF00), 0b1110_1110);
 
         joy.set_key_pressed(GbKeys::Right, false);
@@ -173,10 +153,7 @@ mod joypad_tests {
         joy.set_key_pressed(GbKeys::A, false);
         joy.set_key_pressed(GbKeys::B, true);
         joy.set_key_pressed(GbKeys::Start, true);
-        assert_eq!(
-            joy.update().is_some(),
-            true
-        );
+        assert_eq!(joy.update().is_some(), true);
         assert_eq!(joy.read_byte(0xFF00), 0b1101_0101);
 
         joy.set_key_pressed(GbKeys::B, false);
@@ -184,11 +161,7 @@ mod joypad_tests {
         joy.set_key_pressed(GbKeys::Select, true);
         joy.set_key_pressed(GbKeys::A, true);
         joy.set_key_pressed(GbKeys::Down, true);
-        assert_eq!(
-            joy.update()
-                .is_some(),
-            true
-        );
+        assert_eq!(joy.update().is_some(), true);
         assert_eq!(joy.read_byte(0xFF00), 0b1101_1010);
 
         joy.write_byte(0xFF00, 0xEF);
@@ -203,20 +176,14 @@ mod joypad_tests {
         joy.set_key_pressed(GbKeys::Up, false);
         joy.set_key_pressed(GbKeys::Down, true);
         joy.set_key_pressed(GbKeys::Left, true);
-        assert_eq!(
-            joy.update().is_some(),
-            true
-        );
+        assert_eq!(joy.update().is_some(), true);
         assert_eq!(joy.read_byte(0xFF00), 0b1110_0101);
 
         joy.set_key_pressed(GbKeys::Down, false);
         joy.set_key_pressed(GbKeys::Left, false);
         joy.set_key_pressed(GbKeys::Right, true);
         joy.set_key_pressed(GbKeys::A, true);
-        assert_eq!(
-            joy.update().is_some(),
-            true
-        );
+        assert_eq!(joy.update().is_some(), true);
         assert_eq!(joy.read_byte(0xFF00), 0b1110_1110);
 
         joy.set_key_pressed(GbKeys::Right, false);

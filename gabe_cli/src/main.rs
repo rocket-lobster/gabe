@@ -1,16 +1,20 @@
 mod audio_driver;
-mod video_sinks;
 mod debugger;
 mod time_source;
+mod video_sinks;
 
-use gabe_core::{gb::*, sink::{Sink, AudioFrame}};
+use gabe_core::{
+    gb::*,
+    sink::{AudioFrame, Sink},
+};
 use time_source::TimeSource;
 
 use std::{
+    collections::VecDeque,
     fs::File,
     io::{Read, Write},
     path::Path,
-    time::Instant, collections::VecDeque,
+    time::Instant,
 };
 
 use clap::{App, Arg};
@@ -21,12 +25,14 @@ use minifb::{Key, ScaleMode, Window, WindowOptions};
 const CYCLE_TIME_NS: f32 = 238.41858;
 
 struct SystemTimeSource {
-    start: Instant
+    start: Instant,
 }
 
 impl SystemTimeSource {
     fn _new() -> Self {
-        SystemTimeSource { start: Instant::now() }
+        SystemTimeSource {
+            start: Instant::now(),
+        }
     }
 }
 
@@ -38,7 +44,7 @@ impl TimeSource for SystemTimeSource {
 }
 
 struct SimpleAudioSink {
-    inner: VecDeque<AudioFrame>
+    inner: VecDeque<AudioFrame>,
 }
 
 impl Sink<AudioFrame> for SimpleAudioSink {
@@ -54,9 +60,9 @@ struct Emulator {
 }
 
 impl Emulator {
-    pub fn power_on(path: impl AsRef<Path>, debug: bool) -> Self {
+    pub fn power_on(rom_path: impl AsRef<Path>, save_path: impl AsRef<Path>, debug: bool) -> Self {
         let debugger = Debugger::new(debug);
-        let gb = Gameboy::power_on(path).expect("Path invalid");
+        let gb = Gameboy::power_on(rom_path, save_path).expect("Path invalid");
         Emulator {
             gb,
             debugger,
@@ -109,6 +115,8 @@ fn main() {
         )
         .get_matches();
     let rom_file = matches.value_of("ROM").unwrap();
+    // TODO: Default behavior, provide cmd line option
+    let save_file = rom_file.trim_end_matches("gb").to_owned() + "sav";
     let debug_enabled = matches.is_present("debug");
     let do_disassemble = matches.is_present("disassemble");
 
@@ -122,7 +130,7 @@ fn main() {
         return;
     }
 
-    let mut emu = Emulator::power_on(rom_file, debug_enabled);
+    let mut emu = Emulator::power_on(rom_file, save_file, debug_enabled);
 
     let mut window = Window::new(
         "Gabe Emulator",
@@ -151,7 +159,7 @@ fn main() {
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let mut video_sink = video_sinks::MostRecentSink::new();
         let mut audio_sink = SimpleAudioSink {
-            inner: VecDeque::new()
+            inner: VecDeque::new(),
         };
 
         let target_emu_time_ns = time_source.time_ns() - start_time_ns;
@@ -170,15 +178,16 @@ fn main() {
             }
             window.update();
         } else {
-            while emu.emulated_cycles < target_emu_cycles { 
+            while emu.emulated_cycles < target_emu_cycles {
                 emu.emulated_cycles += emu.gb.step(&mut video_sink, &mut audio_sink) as u64;
-            
+
                 if let Some(frame) = video_sink.get_frame() {
                     let iter = frame.chunks(3);
                     // Convert the series of u8s into a series of RGB-encoded u32s
-                    let image_buffer: Vec<u32> = iter.map(|x| from_u8_rgb(x[0], x[1], x[2])).collect();
+                    let image_buffer: Vec<u32> =
+                        iter.map(|x| from_u8_rgb(x[0], x[1], x[2])).collect();
                     window.update_with_buffer(&image_buffer, 160, 144).unwrap();
-                    
+
                     let keys = window.get_keys();
                     get_key_states(&window, &mut emu.gb);
                     if keys.contains(&Key::LeftCtrl) && keys.contains(&Key::D) && debug_enabled {

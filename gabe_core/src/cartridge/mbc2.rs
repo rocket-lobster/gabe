@@ -1,6 +1,5 @@
 use core::panic;
-use std::fs::File;
-use std::io::Write;
+use std::io::{Read, Seek, Write};
 
 use super::super::mmu::Memory;
 use super::{Cartridge, CartridgeError};
@@ -46,9 +45,7 @@ impl Memory for Mbc2 {
     fn read_byte(&self, addr: u16) -> u8 {
         match addr {
             // Always gets the lower bank 0, no translation of addr
-            0x0000..=0x3FFF => {
-                self.rom[addr as usize]
-            }
+            0x0000..=0x3FFF => self.rom[addr as usize],
             // Offset the addr to be relative to the bank, then add the offset based of the rom_bank
             // Allows this range to technically be a cloned area of bank 0 in some edge cases where rom_bank is 0
             0x4000..=0x7FFF => {
@@ -100,24 +97,38 @@ impl Memory for Mbc2 {
             }
             _ => error!("Invalid cartridge write address {:X}", addr),
         }
-        
     }
 }
 
 impl Cartridge for Mbc2 {
-    fn write_save_file(&self, filename: &str) -> Result<(), CartridgeError> {
+    fn read_save_file(&mut self, file: &mut std::fs::File) -> Result<(), CartridgeError> {
+        if self.has_battery {
+            // We have battery-backed RAM available to read from a file
+            // If we hit a read error, just propagate up, otherwise we succeed.
+            if let Err(e) = file.rewind() {
+                Err(CartridgeError::Io(e))
+            } else if let Err(e) = file.read(&mut self.ram) {
+                Err(CartridgeError::Io(e))
+            } else {
+                Ok(())
+            }
+        } else {
+            Err(CartridgeError::Unsupported(
+                "Game doesn't support save files via battery-backed RAM.".to_string(),
+            ))
+        }
+    }
+
+    fn write_save_file(&self, file: &mut std::fs::File) -> Result<(), CartridgeError> {
         if self.has_battery {
             // We have battery-backed RAM available to write to a file
-            match File::open(filename) {
-                Ok(mut f) => {
-                    // If we hit a write error, just propagate up, otherwise we succeed.
-                    if let Err(e) = f.write_all(&self.ram) {
-                        Err(CartridgeError::Io(e))
-                    } else {
-                        Ok(())
-                    }
-                }
-                Err(e) => Err(CartridgeError::Io(e)),
+            // If we hit a write error, just propagate up, otherwise we succeed.
+            if let Err(e) = file.rewind() {
+                Err(CartridgeError::Io(e))
+            } else if let Err(e) = file.write_all(&self.ram) {
+                Err(CartridgeError::Io(e))
+            } else {
+                Ok(())
             }
         } else {
             Err(CartridgeError::Unsupported(

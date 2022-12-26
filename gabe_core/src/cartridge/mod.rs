@@ -31,5 +31,10 @@ pub trait Cartridge: super::mmu::Memory {
     /// Writes the current content of the Cartridge's battery-backed RAM into the provided
     /// file location. If not supported by the cartridge or fails to write to the location,
     /// returns CartridgeError.
-    fn write_save_file(&self, filename: &str) -> Result<(), CartridgeError>;
+    fn read_save_file(&mut self, file: &mut std::fs::File) -> Result<(), CartridgeError>;
+
+    /// Writes the current content of the Cartridge's battery-backed RAM into the provided
+    /// file location. If not supported by the cartridge or fails to write to the location,
+    /// returns CartridgeError.
+    fn write_save_file(&self, file: &mut std::fs::File) -> Result<(), CartridgeError>;
 }

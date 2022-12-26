@@ -1,9 +1,9 @@
+use super::time_source::*;
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
     Sample, SampleFormat,
 };
 use gabe_core::sink::*;
-use super::time_source::*;
 use log::*;
 
 use std::sync::*;
@@ -109,8 +109,7 @@ impl AudioDriver {
 
         let err_fn = |err| error!("An error occurred on the output audio stream: {}", err);
         let sample_format = best_config.sample_format();
-        let buffer_samples =
-            (sample_rate * latency_ms / 1000 * 2) as usize;
+        let buffer_samples = (sample_rate * latency_ms / 1000 * 2) as usize;
         info!("Sound: ");
         info!("\t Device: {:?}", device.name().unwrap());
         info!("\t Device sample format: {:?}", sample_format);
@@ -181,7 +180,7 @@ impl AudioDriver {
 
     pub fn sink(&self) -> Box<dyn SinkRef<[AudioFrame]>> {
         Box::new(AudioDriverSink {
-            buffer: self.buffer.clone()
+            buffer: self.buffer.clone(),
         })
     }
 

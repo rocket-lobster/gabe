@@ -79,12 +79,18 @@ impl Debugger {
                         println!("Completed steps.");
                         let debug_data = state.get_debug_state();
                         println!("{}", debug_data.cpu_data);
-                        println!("IE: {:02X}  IF: {:02X}", debug_data.ie_data, debug_data.if_data);
+                        println!(
+                            "IE: {:02X}  IF: {:02X}",
+                            debug_data.ie_data, debug_data.if_data
+                        );
                         // Grab max number of bytes needed for any instruction
                         let mem = state.get_memory_range(pc as usize..pc as usize + 3);
                         let disasm = disassemble::disassemble_block(mem.as_ref(), pc);
                         println!("0x{:04X}: {}", disasm[0].0, disasm[0].1);
-                        println!("LCDC: {:02X}  STAT: {:02X}  LY: {:02X}", debug_data.vram_lcdc, debug_data.vram_stat, debug_data.vram_ly);
+                        println!(
+                            "LCDC: {:02X}  STAT: {:02X}  LY: {:02X}",
+                            debug_data.vram_lcdc, debug_data.vram_stat, debug_data.vram_ly
+                        );
                     } else {
                         self.current_command = DebugCommand::Step(n - 1);
                         break;
@@ -131,7 +137,7 @@ impl Debugger {
                         start: pad_start,
                         end: pad_end,
                     });
-                    let mut current_line:u32 = pad_start as u32;
+                    let mut current_line: u32 = pad_start as u32;
                     for v in vals.chunks(16) {
                         print!("0x{:04X}: ", current_line);
                         for x in v.iter() {
@@ -305,7 +311,7 @@ impl Debugger {
                                     let end = if start as u32 + (16 * 10) > 0xFFFF {
                                         0xFFFF
                                     } else {
-                                        start + (16 * 10) 
+                                        start + (16 * 10)
                                     };
                                     DebugCommand::Dump(start..end)
                                 }

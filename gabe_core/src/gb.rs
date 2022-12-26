@@ -36,20 +36,22 @@ pub struct GbDebug {
 impl Gameboy {
     /// Initializes Gameboy state to begin emulation on provided
     /// binary file
-    pub fn power_on(path: impl AsRef<Path>) -> io::Result<Self> {
-        let mmu = mmu::Mmu::power_on(path)?;
-        Ok(
-            Gameboy {
-                cpu: cpu::Cpu::power_on(),
-                mmu,
-            }
-        )
+    pub fn power_on(rom_path: impl AsRef<Path>, save_path: impl AsRef<Path>) -> io::Result<Self> {
+        let mmu = mmu::Mmu::power_on(rom_path, save_path)?;
+        Ok(Gameboy {
+            cpu: cpu::Cpu::power_on(),
+            mmu,
+        })
     }
 
     /// Executes one CPU instruction and updates the other
     /// subsystems with the appropriate number of cycles
     /// Returns a frame if completed during the tick.
-    pub fn step(&mut self, video_sink: &mut dyn Sink<VideoFrame>, audio_sink: &mut dyn Sink<AudioFrame>) -> u32 {
+    pub fn step(
+        &mut self,
+        video_sink: &mut dyn Sink<VideoFrame>,
+        audio_sink: &mut dyn Sink<AudioFrame>,
+    ) -> u32 {
         let cycles = self.cpu.tick(&mut self.mmu);
 
         // Update memory

@@ -1,6 +1,5 @@
 use core::panic;
-use std::fs::File;
-use std::io::Write;
+use std::io::{Read, Seek, Write};
 
 use super::super::mmu::Memory;
 use super::{Cartridge, CartridgeError};
@@ -66,8 +65,7 @@ impl Memory for Mbc1 {
                     // Using Mode 1, so bits 5 and 6 are used to select the location of the lower bank
                     // e.g. if we are using bank 0x3A = 0b011_1010, mask bits 4-0 off and use the resulting
                     // value to find the bank for 0x0000-0x3FFF, which would be 0b011_1010 & 0b110_0000 = 0b010_0000 = bank 0x20
-                    self.rom
-                        [(addr as u32 + (0x4000u32 * (self.rom_bank & 0x60) as u32)) as usize]
+                    self.rom[(addr as u32 + (0x4000u32 * (self.rom_bank & 0x60) as u32)) as usize]
                 } else {
                     self.rom[addr as usize]
                 }
@@ -152,19 +150,34 @@ impl Memory for Mbc1 {
 }
 
 impl Cartridge for Mbc1 {
-    fn write_save_file(&self, filename: &str) -> Result<(), CartridgeError> {
-        if self.has_battery && self.ram_bank_count >= 0x2 {
+    fn read_save_file(&mut self, file: &mut std::fs::File) -> Result<(), CartridgeError> {
+        if self.has_battery && self.ram_bank_count >= 0x1 {
+            // We have battery-backed RAM available to read from a file
+            // If we hit a read error, just propagate up, otherwise we succeed.
+            if let Err(e) = file.rewind() {
+                Err(CartridgeError::Io(e))
+            } else if let Err(e) = file.read(&mut self.ram) {
+                Err(CartridgeError::Io(e))
+            } else {
+                Ok(())
+            }
+        } else {
+            Err(CartridgeError::Unsupported(
+                "Game doesn't support save files via battery-backed RAM.".to_string(),
+            ))
+        }
+    }
+
+    fn write_save_file(&self, file: &mut std::fs::File) -> Result<(), CartridgeError> {
+        if self.has_battery && self.ram_bank_count >= 0x1 {
             // We have battery-backed RAM available to write to a file
-            match File::open(filename) {
-                Ok(mut f) => {
-                    // If we hit a write error, just propagate up, otherwise we succeed.
-                    if let Err(e) = f.write_all(&self.ram) {
-                        Err(CartridgeError::Io(e))
-                    } else {
-                        Ok(())
-                    }
-                }
-                Err(e) => Err(CartridgeError::Io(e)),
+            // If we hit a write error, just propagate up, otherwise we succeed.
+            if let Err(e) = file.rewind() {
+                Err(CartridgeError::Io(e))
+            } else if let Err(e) = file.write_all(&self.ram) {
+                Err(CartridgeError::Io(e))
+            } else {
+                Ok(())
             }
         } else {
             Err(CartridgeError::Unsupported(

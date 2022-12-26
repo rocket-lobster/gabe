@@ -182,7 +182,8 @@ impl SquareChannel1 {
                 0x3 => 0b0111_1110, // 75%
                 _ => unreachable!(),
             };
-            convert_u4_to_f32_sample(((pattern >> self.wave_index) & 0x1) * 0xF) * (self.current_volume as f32 / 15.0)
+            convert_u4_to_f32_sample(((pattern >> self.wave_index) & 0x1) * 0xF)
+                * (self.current_volume as f32 / 15.0)
         } else {
             0.0
         }
@@ -386,7 +387,8 @@ impl SquareChannel2 {
                 _ => unreachable!(),
             };
 
-            convert_u4_to_f32_sample(((pattern >> self.wave_index) & 0x1) * 0xF) * (self.current_volume as f32 / 15.0)
+            convert_u4_to_f32_sample(((pattern >> self.wave_index) & 0x1) * 0xF)
+                * (self.current_volume as f32 / 15.0)
         } else {
             0.0
         }
@@ -547,7 +549,7 @@ impl WaveChannel {
                 0b01 => 0,
                 0b10 => 1,
                 0b11 => 2,
-                _ => unreachable!()
+                _ => unreachable!(),
             };
             convert_u4_to_f32_sample(self.sample_buffer >> vol_shift)
         } else {
@@ -600,7 +602,7 @@ impl Memory for WaveChannel {
                         * 2;
                     // Reset wave index
                     self.wave_index = 0;
-                    
+
                     if !test_bit(self.nr30_dac_enable, 7) {
                         self.channel_enabled = false;
                     }
@@ -717,7 +719,8 @@ impl NoiseChannel {
 
     fn get_amp(&self) -> f32 {
         if self.dac_enabled && self.channel_enabled {
-            convert_u4_to_f32_sample((!self.lfsr & 0x1) as u8 * 0xF) * (self.current_volume as f32 / 15.0)
+            convert_u4_to_f32_sample((!self.lfsr & 0x1) as u8 * 0xF)
+                * (self.current_volume as f32 / 15.0)
         } else {
             0.0
         }
@@ -765,7 +768,8 @@ impl Memory for NoiseChannel {
                         self.length_timer = 64;
                     }
                     // Reset frequency period
-                    self.frequency_timer = (self.divisor as u32) << extract_bits(self.nr43_freq_rng, 7, 4);
+                    self.frequency_timer =
+                        (self.divisor as u32) << extract_bits(self.nr43_freq_rng, 7, 4);
                     // Reload envelope period
                     self.envelope_period = extract_bits(self.nr42_volume_control, 2, 0);
                     self.envelope_timer = self.envelope_period;
@@ -843,7 +847,7 @@ pub struct Apu {
     frame_cycle: u8,
 
     /// When any DAC is enabled, a high-pass filter capacitor is slowly applied
-    /// to each of the two analog signals. 
+    /// to each of the two analog signals.
     hpf_capacitor_l: f32,
     hpf_capacitor_r: f32,
 }
@@ -901,21 +905,21 @@ impl Apu {
                 wave_ram: [0; 16],
                 wave_index: 0,
             },
-            noise: NoiseChannel { 
-                channel_enabled: false, 
-                dac_enabled: true, 
-                nr41_length_timer: 0xFF, 
-                nr42_volume_control: 0x00, 
-                nr43_freq_rng: 0x00, 
-                nr44_channel_control: 0xBF, 
-                frequency_timer: 0, 
-                length_timer: 0, 
-                current_volume: 0, 
-                volume_increasing: false, 
-                envelope_timer: 0, 
-                envelope_period: 0, 
-                lfsr: 0x0, 
-                divisor: 8, 
+            noise: NoiseChannel {
+                channel_enabled: false,
+                dac_enabled: true,
+                nr41_length_timer: 0xFF,
+                nr42_volume_control: 0x00,
+                nr43_freq_rng: 0x00,
+                nr44_channel_control: 0xBF,
+                frequency_timer: 0,
+                length_timer: 0,
+                current_volume: 0,
+                volume_increasing: false,
+                envelope_timer: 0,
+                envelope_period: 0,
+                lfsr: 0x0,
+                divisor: 8,
             },
             cycle_count: 0,
             frame_cycle: 0,
@@ -991,27 +995,30 @@ impl Apu {
                         }
                         amp_acc / 4.0
                     };
-                    let left_vol = (extract_bits(self.nr50_output_control, 6, 4) as f32 + 1.0) / 8.0;
-                    let right_vol = (extract_bits(self.nr50_output_control, 2, 0) as f32 + 1.0) / 8.0;
+                    let left_vol =
+                        (extract_bits(self.nr50_output_control, 6, 4) as f32 + 1.0) / 8.0;
+                    let right_vol =
+                        (extract_bits(self.nr50_output_control, 2, 0) as f32 + 1.0) / 8.0;
                     let mut left_output = left_amp * left_vol;
-                    (left_output, self.hpf_capacitor_l) = self.high_pass_filter(left_output, self.hpf_capacitor_l);
+                    (left_output, self.hpf_capacitor_l) =
+                        self.high_pass_filter(left_output, self.hpf_capacitor_l);
                     let mut right_output = right_amp * right_vol;
-                    (right_output, self.hpf_capacitor_r) = self.high_pass_filter(right_output, self.hpf_capacitor_r);
-                    audio_sink.append((
-                        (left_output),
-                        (right_output),
-                    ));
+                    (right_output, self.hpf_capacitor_r) =
+                        self.high_pass_filter(right_output, self.hpf_capacitor_r);
+                    audio_sink.append(((left_output), (right_output)));
                 }
             }
         }
     }
 
-    
     fn high_pass_filter(&mut self, in_sample: f32, capacitor: f32) -> (f32, f32) {
         let mut out_sample = 0.0;
         let mut out_cap = 0.0;
         let charge_factor = 0.999958f32.powf(SAMPLE_RATE_PERIOD as f32);
-        if self.square1.dac_enabled || self.square2.dac_enabled || test_bit(self.wave.nr30_dac_enable, 7) {
+        if self.square1.dac_enabled
+            || self.square2.dac_enabled
+            || test_bit(self.wave.nr30_dac_enable, 7)
+        {
             out_sample = in_sample - capacitor;
             out_cap = in_sample - out_sample * charge_factor;
         }
@@ -1075,6 +1082,6 @@ impl Memory for Apu {
 fn convert_u4_to_f32_sample(sample: u8) -> f32 {
     // Mask off upper nibble to make sure it's 4-bit
     let sample = sample & 0xF;
-    
+
     (sample as f32 / 7.5) - 1.0
 }

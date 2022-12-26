@@ -322,7 +322,11 @@ impl Vram {
         ret
     }
 
-    pub fn update(&mut self, cycles: u32, video_sink: &mut dyn Sink<VideoFrame>) -> Option<Vec<InterruptKind>> {
+    pub fn update(
+        &mut self,
+        cycles: u32,
+        video_sink: &mut dyn Sink<VideoFrame>,
+    ) -> Option<Vec<InterruptKind>> {
         let mut interrupts: Vec<InterruptKind> = vec![];
 
         // If LCD is disabled, nothing is done, blank display

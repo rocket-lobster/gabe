@@ -38,7 +38,14 @@ impl Memory for Mbc0 {
 }
 
 impl Cartridge for Mbc0 {
-    fn write_save_file(&self, _filename: &str) -> Result<(), CartridgeError> {
+    fn read_save_file(&mut self, _file: &mut std::fs::File) -> Result<(), CartridgeError> {
+        // No RAM file to write save to, do nothing
+        Err(CartridgeError::Unsupported(
+            "MBC0 does not support save file writing.".to_string(),
+        ))
+    }
+
+    fn write_save_file(&self, _file: &mut std::fs::File) -> Result<(), CartridgeError> {
         // No RAM file to write save to, do nothing
         Err(CartridgeError::Unsupported(
             "MBC0 does not support save file writing.".to_string(),
