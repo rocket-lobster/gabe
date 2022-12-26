@@ -14,7 +14,13 @@ debug = true
 clap = "2.33.0"
 log = "*"
 env_logger = "*"
-minifb = "0.23.0"
 cpal = "*"
 spin_sleep = "*"
 gabe_core = { path = "../gabe_core" }
+
+[target.'cfg(not(unix))'.dependencies]
+minifb = "0.23.0"
+
+# Not currently cooperating with GNOME Wayland window decorations
+[target.'cfg(unix)'.dependencies]
+minifb = { version = "0.23.0", default-features = false, features = ["x11"] }
