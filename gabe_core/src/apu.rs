@@ -515,9 +515,9 @@ impl WaveChannel {
             self.sample_buffer = {
                 let entry = self.wave_ram[self.wave_index / 2];
                 if self.wave_index & 0x1 == 0 {
-                    entry & 0xF
-                } else {
                     (entry >> 4) & 0xF
+                } else {
+                    entry & 0xF
                 }
             };
 
