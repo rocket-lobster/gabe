@@ -612,6 +612,180 @@ impl Memory for WaveChannel {
     }
 }
 
+struct NoiseChannel {
+    /// Flag indicating if the sound is currently playing
+    /// Set to true on a NR34 b7 trigger write, and reported by NR52
+    channel_enabled: bool,
+
+    /// Flag indicating if the DAC is generating samples from the
+    /// waveform generator
+    dac_enabled: bool,
+
+    /// CH4 Length Timer (W)
+    /// NR41 ($FF20)
+    /// Bit 5-0 - length timer
+    nr41_length_timer: u8,
+
+    /// CH4 Volume Control (R/W)
+    /// NR42 ($FF21)
+    /// Bit 7-4 - Initial Volume of envelope (0-0Fh) (0=No Sound)
+    /// Bit 3   - Envelope Direction (0=Decrease, 1=Increase)
+    /// Bit 2-0 - Number of envelope sweep (n: 0-7)
+    /// (If zero, stop envelope operation.)
+    nr42_volume_control: u8,
+
+    /// NR43 CH4 Freq and RNG
+    /// Bit 7-4 - Clock shift (s)
+    /// Bit 3   - LFSR width (0=15 bits, 1=7 bits)
+    /// Bit 2-0 - Clock divider (r)
+    nr43_freq_rng: u8,
+
+    /// NR44 CH4 Wavelength High / Control (W)
+    /// Bit 7   - Trigger (1=Restart channel)  (Write Only)
+    /// Bit 6   - Sound Length enable          (Read/Write)
+    ///           (1=Stop output when length in NR41 expires)
+    nr44_channel_control: u8,
+
+    /// The period of the frequency timer for noise generation.
+    frequency_timer: u32,
+
+    /// Loaded on channel trigger from NR41 [5:0], subtracted from 256
+    /// If length is enabled, once period is reached, channel is disabled
+    length_timer: u16,
+
+    /// The volume of the channel, modified by the volume envelope if necessary
+    /// Starts at NR42 [7:4] when channel is triggered
+    current_volume: u8,
+
+    /// The state of the volume envelope, loaded from NR42 [3] on channel trigger
+    volume_increasing: bool,
+
+    /// The number of envelope steps needed before changing volume
+    /// Loaded from `envelope_period` when reaching 0 or on channel trigger
+    envelope_timer: u8,
+
+    /// The value reloaded into the envelope timer when it reaches zero
+    /// Loaded from NR42 [2:0] on channel trigger
+    envelope_period: u8,
+
+    /// The state of the Linear Feedback Shift Register (LFSR) that
+    /// generates pseudo-random values for the noise generation
+    lfsr: u16,
+
+    /// The divisor value used when reloading the frequency period
+    divisor: u8,
+}
+
+impl NoiseChannel {
+    fn step_freq(&mut self) {
+        // Check if the buffer needs to be updated with new samples to match the frequency
+        if self.frequency_timer == 0 {
+            let output = !(self.lfsr & 0x1) ^ ((self.lfsr >> 1) & 0x1);
+            self.lfsr |= output << 15;
+            if test_bit(self.nr43_freq_rng, 3) {
+                self.lfsr |= output << 7;
+            }
+            self.lfsr >>= 1;
+            self.frequency_timer = (self.divisor as u32) << extract_bits(self.nr43_freq_rng, 7, 4);
+        }
+        self.frequency_timer -= 1;
+    }
+
+    fn step_envelope(&mut self) {
+        if self.envelope_period != 0 {
+            self.envelope_timer -= 1;
+            if self.envelope_timer == 0 {
+                self.envelope_timer = self.envelope_period;
+                if self.current_volume < 0xF && self.volume_increasing {
+                    self.current_volume += 1;
+                } else if self.current_volume > 0x0 && !self.volume_increasing {
+                    self.current_volume -= 1;
+                }
+            }
+        }
+    }
+
+    fn step_length(&mut self) {
+        if test_bit(self.nr44_channel_control, 6) && (self.length_timer > 0) {
+            self.length_timer -= 1;
+
+            if self.length_timer == 0 {
+                self.channel_enabled = false;
+            }
+        }
+    }
+
+    fn get_amp(&self) -> f32 {
+        if self.dac_enabled && self.channel_enabled {
+            convert_u4_to_f32_sample((!self.lfsr & 0x1) as u8 * 0xF) * (self.current_volume as f32 / 15.0)
+        } else {
+            0.0
+        }
+    }
+}
+
+impl Memory for NoiseChannel {
+    fn read_byte(&self, addr: u16) -> u8 {
+        assert!((0xFF20..=0xFF23).contains(&addr) || (0xFF30..=0xFF3F).contains(&addr));
+        match addr {
+            0xFF20 => 0xFF,
+            0xFF21 => self.nr42_volume_control,
+            0xFF22 => self.nr43_freq_rng,
+            0xFF23 => self.nr44_channel_control | 0xBF,
+            _ => unreachable!(),
+        }
+    }
+
+    fn write_byte(&mut self, addr: u16, val: u8) {
+        assert!((0xFF20..=0xFF23).contains(&addr) || (0xFF30..=0xFF3F).contains(&addr));
+        match addr {
+            0xFF20 => self.nr41_length_timer = val,
+            0xFF21 => {
+                self.nr42_volume_control = val;
+                self.dac_enabled = extract_bits(val, 7, 3) != 0x0;
+                if !self.dac_enabled {
+                    self.channel_enabled = false;
+                }
+            }
+            0xFF22 => {
+                self.nr43_freq_rng = val;
+                self.divisor = if extract_bits(self.nr43_freq_rng, 2, 0) == 0 {
+                    8
+                } else {
+                    extract_bits(self.nr43_freq_rng, 2, 0) << 4
+                };
+            }
+            0xFF23 => {
+                self.nr44_channel_control = val;
+                if test_bit(val, 7) {
+                    // Channel is triggered, init state
+                    self.channel_enabled = true;
+                    // Length counter set
+                    if self.length_timer == 0 {
+                        self.length_timer = 64;
+                    }
+                    // Reset frequency period
+                    self.frequency_timer = (self.divisor as u32) << extract_bits(self.nr43_freq_rng, 7, 4);
+                    // Reload envelope period
+                    self.envelope_period = extract_bits(self.nr42_volume_control, 2, 0);
+                    self.envelope_timer = self.envelope_period;
+                    // Reload current volume
+                    self.current_volume = extract_bits(self.nr42_volume_control, 7, 4);
+                    // Load envelope direction
+                    self.volume_increasing = test_bit(val, 3);
+                    // Reset LFSR bits
+                    self.lfsr = 0;
+
+                    if !self.dac_enabled {
+                        self.channel_enabled = false;
+                    }
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
 pub struct Apu {
     // Global Registers
     /// Channel control / ON-OFF / Volume (R/W)
@@ -650,6 +824,10 @@ pub struct Apu {
     /// Sound Channel 3 - Wave
     /// NR30-NR34, Wave RAM ($FF1A - $FF1E, $FF30 - $FF3F)
     wave: WaveChannel,
+
+    /// Sound Channel 4 - Noise
+    /// NR41-NR44 ($FF20 - $FF23)
+    noise: NoiseChannel,
 
     /// The current cycle count in CPU cycles at 4.19 MHz
     /// Used to step the frame sequencer and determine
@@ -723,6 +901,22 @@ impl Apu {
                 wave_ram: [0; 16],
                 wave_index: 0,
             },
+            noise: NoiseChannel { 
+                channel_enabled: false, 
+                dac_enabled: true, 
+                nr41_length_timer: 0xFF, 
+                nr42_volume_control: 0x00, 
+                nr43_freq_rng: 0x00, 
+                nr44_channel_control: 0xBF, 
+                frequency_timer: 0, 
+                length_timer: 0, 
+                current_volume: 0, 
+                volume_increasing: false, 
+                envelope_timer: 0, 
+                envelope_period: 0, 
+                lfsr: 0x0, 
+                divisor: 8, 
+            },
             cycle_count: 0,
             frame_cycle: 0,
             hpf_capacitor_l: 0.0,
@@ -738,6 +932,7 @@ impl Apu {
                 self.square1.step_freq();
                 self.square2.step_freq();
                 self.wave.step_freq();
+                self.noise.step_freq();
 
                 if self.cycle_count >= FRAME_SEQ_PERIOD {
                     // Increment the number of frame sequencer clocks
@@ -748,6 +943,7 @@ impl Apu {
                         self.square1.step_length();
                         self.square2.step_length();
                         self.wave.step_length();
+                        self.noise.step_length();
                     }
                     if [2, 6].contains(&self.frame_cycle) {
                         // Update Freq Sweep
@@ -757,6 +953,7 @@ impl Apu {
                         // Update volume envelope
                         self.square1.step_envelope();
                         self.square2.step_envelope();
+                        self.noise.step_envelope();
                     }
                 }
 
@@ -773,6 +970,9 @@ impl Apu {
                         if test_bit(self.nr51_channel_pan, 6) {
                             amp_acc += self.wave.get_amp();
                         }
+                        if test_bit(self.nr51_channel_pan, 7) {
+                            amp_acc += self.noise.get_amp();
+                        }
                         amp_acc / 4.0
                     };
                     let right_amp = {
@@ -785,6 +985,9 @@ impl Apu {
                         }
                         if test_bit(self.nr51_channel_pan, 2) {
                             amp_acc += self.wave.get_amp();
+                        }
+                        if test_bit(self.nr51_channel_pan, 4) {
+                            amp_acc += self.noise.get_amp();
                         }
                         amp_acc / 4.0
                     };
@@ -823,6 +1026,7 @@ impl Memory for Apu {
             0xFF10..=0xFF14 => self.square1.read_byte(addr),
             0xFF16..=0xFF19 => self.square2.read_byte(addr),
             0xFF1A..=0xFF1E => self.wave.read_byte(addr),
+            0xFF20..=0xFF23 => self.noise.read_byte(addr),
             0xFF24 => self.nr50_output_control,
             0xFF25 => self.nr51_channel_pan,
             0xFF26 => {
@@ -839,6 +1043,9 @@ impl Memory for Apu {
                 if self.wave.channel_enabled {
                     ret = set_bit(ret, 2);
                 }
+                if self.noise.channel_enabled {
+                    ret = set_bit(ret, 3);
+                }
                 ret
             }
             0xFF30..=0xFF3F => self.wave.read_byte(addr),
@@ -854,6 +1061,7 @@ impl Memory for Apu {
             0xFF10..=0xFF14 => self.square1.write_byte(addr, val),
             0xFF16..=0xFF19 => self.square2.write_byte(addr, val),
             0xFF1A..=0xFF1E => self.wave.write_byte(addr, val),
+            0xFF20..=0xFF23 => self.noise.write_byte(addr, val),
             0xFF24 => self.nr50_output_control = val,
             0xFF25 => self.nr51_channel_pan = val,
             0xFF26 => self.all_sound_on = val & 0x80 != 0, // Only bit 7 is writable

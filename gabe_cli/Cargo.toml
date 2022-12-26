@@ -19,7 +19,7 @@ spin_sleep = "*"
 gabe_core = { path = "../gabe_core" }
 
 [target.'cfg(not(unix))'.dependencies]
-minifb = "0.23.0"
+minifb = { version = "0.23.0", default-features = false }
 
 # Not currently cooperating with GNOME Wayland window decorations
 [target.'cfg(unix)'.dependencies]
