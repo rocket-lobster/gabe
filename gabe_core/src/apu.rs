@@ -127,7 +127,7 @@ impl SquareChannel1 {
                 freq = -freq;
             }
             freq += self.sweep_shadow as i32;
-            if freq > 2047 || freq < 0 {
+            if !(0..=2047).contains(&freq) {
                 self.channel_enabled = false;
             } else if extract_bits(self.nr10_sweep_control, 2, 0) != 0 {
                 // Write the new freq into shadow and NR13+NR14
@@ -142,7 +142,7 @@ impl SquareChannel1 {
                     freq = -freq;
                 }
                 freq += self.sweep_shadow as i32;
-                if freq > 2047 || freq < 0 {
+                if !(0..=2047).contains(&freq) {
                     self.channel_enabled = false;
                 }
             }

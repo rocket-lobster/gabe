@@ -560,7 +560,7 @@ impl Vram {
                 // Check x-pos for this OBJ
                 if x_pos > p as u8 && x_pos <= p as u8 + 8 {
                     let tile_pixel_x = p as u8 + 8 - x_pos;
-                    let mut tile_pixel_y = (self.ly as u8 + 16).wrapping_sub(y_pos);
+                    let mut tile_pixel_y = (self.ly + 16).wrapping_sub(y_pos);
 
                     // Parse attributes
                     let _bg_prio = (attribs & 0b1000_0000) != 0;
@@ -711,7 +711,6 @@ impl Memory for Vram {
             0xFF4B => self.window_coords.0 = val,
             _ => {
                 error!("Unassigned write in VRAM: {:X}", addr);
-                ()
             }
         }
     }

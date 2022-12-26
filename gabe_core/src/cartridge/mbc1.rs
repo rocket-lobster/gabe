@@ -67,7 +67,7 @@ impl Memory for Mbc1 {
                     // e.g. if we are using bank 0x3A = 0b011_1010, mask bits 4-0 off and use the resulting
                     // value to find the bank for 0x0000-0x3FFF, which would be 0b011_1010 & 0b110_0000 = 0b010_0000 = bank 0x20
                     self.rom
-                        [(addr as u32 + (0x4000 as u32 * (self.rom_bank & 0x60) as u32)) as usize]
+                        [(addr as u32 + (0x4000u32 * (self.rom_bank & 0x60) as u32)) as usize]
                 } else {
                     self.rom[addr as usize]
                 }
@@ -123,7 +123,7 @@ impl Memory for Mbc1 {
             0x4000..=0x5FFF => {
                 if self.rom_bank_count >= 0x40 {
                     // Using a >1 MB ROM, need additional bits to select ROM bank
-                    self.rom_bank = ((val & 0x3) << 5) + self.rom_bank;
+                    self.rom_bank += (val & 0x3) << 5;
                 } else if self.ram_bank_count == 0x4 {
                     // Using 32 KB of ram, select the RAM bank
                     self.ram_bank = val & 0x3;

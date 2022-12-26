@@ -69,7 +69,7 @@ impl Debugger {
             match &self.current_command {
                 DebugCommand::Disassemble(n) => {
                     let mem = state.get_memory_range(pc as usize..pc as usize + *n);
-                    let disasm = disassemble::disassemble_block(mem, pc);
+                    let disasm = disassemble::disassemble_block(mem.as_ref(), pc);
                     for (p, s) in disasm {
                         println!("0x{:04X}: {}", p, s);
                     }
@@ -82,7 +82,7 @@ impl Debugger {
                         println!("IE: {:02X}  IF: {:02X}", debug_data.ie_data, debug_data.if_data);
                         // Grab max number of bytes needed for any instruction
                         let mem = state.get_memory_range(pc as usize..pc as usize + 3);
-                        let disasm = disassemble::disassemble_block(mem, pc);
+                        let disasm = disassemble::disassemble_block(mem.as_ref(), pc);
                         println!("0x{:04X}: {}", disasm[0].0, disasm[0].1);
                         println!("LCDC: {:02X}  STAT: {:02X}  LY: {:02X}", debug_data.vram_lcdc, debug_data.vram_stat, debug_data.vram_ly);
                     } else {

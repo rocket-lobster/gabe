@@ -85,7 +85,7 @@ impl SinkRef<[AudioFrame]> for AudioDriverSink {
 
 pub struct AudioDriver {
     buffer: Arc<Mutex<SampleBuffer>>,
-    stream: cpal::Stream,
+    _stream: cpal::Stream,
 }
 
 impl AudioDriver {
@@ -175,7 +175,7 @@ impl AudioDriver {
 
         AudioDriver {
             buffer: audio_buffer,
-            stream,
+            _stream: stream,
         }
     }
 

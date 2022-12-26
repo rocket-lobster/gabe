@@ -14,7 +14,7 @@ pub struct Mbc0 {
 
 impl Mbc0 {
     pub fn power_on(rom: Vec<u8>) -> Self {
-        assert!(rom.len() <= CART_ROM_SIZE as usize);
+        assert!(rom.len() <= CART_ROM_SIZE);
         Mbc0 { rom }
     }
 }

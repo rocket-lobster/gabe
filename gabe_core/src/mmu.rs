@@ -5,12 +5,11 @@ use std::{io, panic};
 
 use super::apu::Apu;
 use super::cartridge::Cartridge;
-use super::gb::GbKeys;
 use super::joypad::Joypad;
 use super::serial::Serial;
 use super::sink::*;
 use super::timer::Timer;
-use super::vram::{FrameData, Vram};
+use super::vram::Vram;
 use super::wram::Wram;
 
 /// The possible states of a DMA transfer running within the MMU. Until a write is performed

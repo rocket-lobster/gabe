@@ -47,24 +47,19 @@ impl Registers {
     /// Simulates the state of the CPU post-BIOS and right before running
     /// user code
     fn power_on() -> Self {
-        // Default to all zeros
-        let mut reg = Self::default();
-
         // Simulate BIOS procedure that initializes values
-        reg.a = 0x01;
-        reg.f = 0xB0;
-        reg.b = 0x00;
-        reg.c = 0x13;
-        reg.d = 0x00;
-        reg.e = 0xD8;
-        reg.h = 0x01;
-        reg.l = 0x4D;
-        reg.sp = 0xFFFE;
-
-        // Start at memory location 0x0100 after running the BIOS procedure
-        // This is where actual ROM game code begins
-        reg.pc = 0x0100;
-        reg
+        Registers {
+            a: 0x01,
+            f: 0xB0,
+            b: 0x00,
+            c: 0x13,
+            d: 0x00,
+            e: 0xD8,
+            h: 0x01,
+            l: 0x4D,
+            sp: 0xFFFE,
+            pc: 0x0100,
+        }
     }
 
     /// Returns a 16-bit value where
@@ -704,7 +699,7 @@ impl Cpu {
 
             // CPL
             0x2F => {
-                self.reg.a = self.reg.a ^ 0xFF;
+                self.reg.a ^= 0xFF;
                 self.reg.set_flag(Flag::N, true);
                 self.reg.set_flag(Flag::H, true);
             }

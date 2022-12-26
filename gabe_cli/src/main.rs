@@ -3,29 +3,29 @@ mod video_sinks;
 mod debugger;
 mod time_source;
 
-use gabe_core::{gb::*, sink::{VideoFrame, Sink, AudioFrame}};
+use gabe_core::{gb::*, sink::{Sink, AudioFrame}};
 use time_source::TimeSource;
 
 use std::{
     fs::File,
     io::{Read, Write},
     path::Path,
-    time::{Instant, SystemTime, Duration}, alloc::System, collections::VecDeque,
+    time::Instant, collections::VecDeque,
 };
 
 use clap::{App, Arg};
 
 use debugger::{Debugger, DebuggerState};
-use minifb::{Key, ScaleMode, Window, WindowOptions, KeyRepeat};
+use minifb::{Key, ScaleMode, Window, WindowOptions};
 
-const CYCLE_TIME_NS: f32 = 238.418579102;
+const CYCLE_TIME_NS: f32 = 238.41858;
 
 struct SystemTimeSource {
     start: Instant
 }
 
 impl SystemTimeSource {
-    fn new() -> Self {
+    fn _new() -> Self {
         SystemTimeSource { start: Instant::now() }
     }
 }
@@ -200,7 +200,7 @@ fn disassemble_to_file(path: impl AsRef<Path>) -> Result<(), std::io::Error> {
     let mut out_file = File::create("output.asm")?;
     let mut rom_data = Vec::new();
     in_file.read_to_end(&mut rom_data)?;
-    let disasm = gabe_core::disassemble::disassemble_block(rom_data.into_boxed_slice(), 0);
+    let disasm = gabe_core::disassemble::disassemble_block(rom_data.as_slice(), 0);
     for (p, s) in disasm {
         out_file.write_all(format!("0x{:04X}: {}\n", p, s).as_bytes())?;
     }

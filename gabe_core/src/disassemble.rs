@@ -3,7 +3,7 @@
 /// Note: This converts data naively, and assumes the initial start point is an opcode and not the
 /// operand of a previous opcode or data. Ensure that the input starts on a known-good opcode,
 /// and that the entire range is valid code, not data.
-pub fn disassemble_block(data: Box<[u8]>, pc: u16) -> Vec<(u16, String)> {
+pub fn disassemble_block(data: &[u8], pc: u16) -> Vec<(u16, String)> {
     let mut iter = data.iter();
     let mut ret: Vec<(u16, String)> = vec![];
     let mut current_pc = pc;
