@@ -105,7 +105,7 @@ impl AudioDriver {
         let best_config = supported_configs_range
             .max_by(|x, y| x.cmp_default_heuristics(y))
             .expect("No supported output configs for device.")
-            .with_sample_rate(cpal::SampleRate(sample_rate));
+            .with_sample_rate(cpal::SampleRate(48000));
 
         let err_fn = |err| error!("An error occurred on the output audio stream: {}", err);
         let sample_format = best_config.sample_format();
