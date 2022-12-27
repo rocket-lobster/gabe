@@ -3,3 +3,6 @@ target/
 .vscode
 gabe-cli/Cargo.lock
 gabe-core/Cargo.lock
+*.sav
+*.s
+source

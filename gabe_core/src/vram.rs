@@ -108,11 +108,10 @@ struct Stat {
     /// Bit 2: Coincidence Flag (0: LYC!=LY, 1: LYC=LY)
     lyc_ly_flag: bool,
     /// Bit 1-0: Mode Flag
-    ///
-    ///     - 00: During H-Blank
-    ///     - 01: During V-Blank
-    ///     - 10: During OAM Search
-    ///     - 11: During Data transfer to LCD
+    ///     00: During H-Blank
+    ///     01: During V-Blank
+    ///     10: During OAM Search
+    ///     11: During Data transfer to LCD
     mode_flag: LCDMode,
 }
 

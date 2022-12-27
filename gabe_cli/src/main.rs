@@ -154,7 +154,7 @@ fn main() {
     // let time_source = SystemTimeSource::new();
     let time_source = audio_driver.time_source();
 
-    let start_time_ns = time_source.time_ns();
+    let mut start_time_ns = time_source.time_ns();
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let mut video_sink = video_sinks::BlendVideoSink::new();
@@ -172,9 +172,11 @@ fn main() {
                     // Ignore frames
                     let keys = window.get_keys();
                     update_key_states(&keys, &mut emu.gb);
+                    emu.gb.step(&mut video_sink, &mut audio_sink);
                 }
                 DebuggerState::Stopping => {
                     emu.debugger.quit();
+                    start_time_ns = time_source.time_ns();
                 }
             }
             window.update();
@@ -198,10 +200,9 @@ fn main() {
                     }
                 }
             }
-
             audio_buffer_sink.append(audio_sink.inner.as_slices().0);
+            spin_sleep::sleep(std::time::Duration::from_millis(3));
         }
-        spin_sleep::sleep(std::time::Duration::from_millis(3));
     }
 }
 

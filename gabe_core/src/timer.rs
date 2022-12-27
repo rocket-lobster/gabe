@@ -14,11 +14,10 @@ pub struct Timer {
     /// 0xFF07: Timer Control
     /// Bit 2: 0 means stop the timer, 1 means start the timer
     /// Bit 1-0: Selects timer frequency
-    ///
-    ///     - 00: 4096 Hz
-    ///     - 01: 262144 Hz
-    ///     - 10: 65536 Hz
-    ///     - 11: 16384 Hz
+    ///     00: 4096 Hz
+    ///     01: 262144 Hz
+    ///     10: 65536 Hz
+    ///     11: 16384 Hz
     tac: u8,
     /// Tracks the current cycles before incrementing DIV, increments at 256 cycles
     div_cycles: u32,

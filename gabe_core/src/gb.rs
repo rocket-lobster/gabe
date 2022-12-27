@@ -63,6 +63,17 @@ impl Gameboy {
         self.mmu.joypad.set_key_pressed(key, pressed);
     }
 
+    pub fn poll_serial(&mut self) -> Option<u8> {
+        if self.mmu.read_byte(0xFF02) == 0x81 {
+            // Output ready
+            // Clear SC to ACK
+            self.mmu.write_byte(0xFF02, 0x01);
+            Some(self.mmu.read_byte(0xFF01))
+        } else {
+            None
+        }
+    }
+
     pub fn get_debug_state(&self) -> GbDebug {
         GbDebug {
             cpu_data: self.cpu.get_debug_data(),

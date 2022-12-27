@@ -96,7 +96,12 @@ impl Debugger {
                         break;
                     }
                 }
-                DebugCommand::Continue => break,
+                DebugCommand::Continue => {
+                    let mem = state.get_memory_range(pc as usize..pc as usize + 3);
+                    let disasm = disassemble::disassemble_block(mem.as_ref(), pc);
+                    println!("0x{:04X}: {}", disasm[0].0, disasm[0].1);
+                    break;
+                }
                 DebugCommand::Print(s) => {
                     let target = s.clone();
                     let mut iter = target.split_terminator('.');
