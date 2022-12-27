@@ -96,6 +96,7 @@ impl Mmu {
         use super::cartridge::mbc0::Mbc0;
         use super::cartridge::mbc1::Mbc1;
         use super::cartridge::mbc2::Mbc2;
+        use super::cartridge::mbc3::Mbc3;
 
         let mut rom_file = File::open(rom_path.as_ref())?;
         let mut save_file = OpenOptions::new()
@@ -144,6 +145,26 @@ impl Mmu {
             0x06 => {
                 info!("\tMBC Type: MBC2 w/ Battery");
                 Box::new(Mbc2::power_on(rom_data, rom_size, true))
+            }
+            0x0F => {
+                info!("\tMBC Type: MBC3 w/ RTC + Battery");
+                Box::new(Mbc3::power_on(rom_data, rom_size, 0, true, true))
+            }
+            0x10 => {
+                info!("\tMBC Type: MBC3 w/ RTC + RAM + Battery");
+                Box::new(Mbc3::power_on(rom_data, rom_size, ram_size, true, true))
+            }
+            0x11 => {
+                info!("\tMBC Type: MBC3");
+                Box::new(Mbc3::power_on(rom_data, rom_size, 0, false, false))
+            }
+            0x12 => {
+                info!("\tMBC Type: MBC3 w/ RAM");
+                Box::new(Mbc3::power_on(rom_data, rom_size, ram_size, false, false))
+            }
+            0x13 => {
+                info!("\tMBC Type: MBC3 w/ RAM + Battery");
+                Box::new(Mbc3::power_on(rom_data, rom_size, ram_size, true, false))
             }
             _ => unimplemented!("MBC value {:02X} not supported!", rom_data[0x147]),
         };

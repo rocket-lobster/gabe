@@ -157,7 +157,7 @@ fn main() {
     let start_time_ns = time_source.time_ns();
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
-        let mut video_sink = video_sinks::MostRecentSink::new();
+        let mut video_sink = video_sinks::BlendVideoSink::new();
         let mut audio_sink = SimpleAudioSink {
             inner: VecDeque::new(),
         };
@@ -170,7 +170,8 @@ fn main() {
             match action {
                 DebuggerState::Running => {
                     // Ignore frames
-                    get_key_states(&window, &mut emu.gb);
+                    let keys = window.get_keys();
+                    update_key_states(&keys, &mut emu.gb);
                 }
                 DebuggerState::Stopping => {
                     emu.debugger.quit();
@@ -189,7 +190,7 @@ fn main() {
                     window.update_with_buffer(&image_buffer, 160, 144).unwrap();
 
                     let keys = window.get_keys();
-                    get_key_states(&window, &mut emu.gb);
+                    update_key_states(&keys, &mut emu.gb);
                     if keys.contains(&Key::LeftCtrl) && keys.contains(&Key::D) && debug_enabled {
                         // Fall back into debug mode on next update
                         println!("Received debug command, enabling debugger...");
@@ -200,7 +201,7 @@ fn main() {
 
             audio_buffer_sink.append(audio_sink.inner.as_slices().0);
         }
-        spin_sleep::sleep(std::time::Duration::from_millis(1));
+        spin_sleep::sleep(std::time::Duration::from_millis(3));
     }
 }
 
@@ -216,13 +217,13 @@ fn disassemble_to_file(path: impl AsRef<Path>) -> Result<(), std::io::Error> {
     Ok(())
 }
 
-fn get_key_states(window: &Window, gb: &mut Gameboy) {
-    gb.update_key_state(GbKeys::A, window.is_key_down(Key::X));
-    gb.update_key_state(GbKeys::B, window.is_key_down(Key::Z));
-    gb.update_key_state(GbKeys::Start, window.is_key_down(Key::Enter));
-    gb.update_key_state(GbKeys::Select, window.is_key_down(Key::Backspace));
-    gb.update_key_state(GbKeys::Up, window.is_key_down(Key::Up));
-    gb.update_key_state(GbKeys::Down, window.is_key_down(Key::Down));
-    gb.update_key_state(GbKeys::Left, window.is_key_down(Key::Left));
-    gb.update_key_state(GbKeys::Right, window.is_key_down(Key::Right));
+fn update_key_states(keys: &[Key], gb: &mut Gameboy) {
+    gb.update_key_state(GbKeys::A, keys.contains(&Key::X));
+    gb.update_key_state(GbKeys::B, keys.contains(&Key::Z));
+    gb.update_key_state(GbKeys::Start, keys.contains(&Key::Enter));
+    gb.update_key_state(GbKeys::Select, keys.contains(&Key::Backspace));
+    gb.update_key_state(GbKeys::Up, keys.contains(&Key::Up));
+    gb.update_key_state(GbKeys::Down, keys.contains(&Key::Down));
+    gb.update_key_state(GbKeys::Left, keys.contains(&Key::Left));
+    gb.update_key_state(GbKeys::Right, keys.contains(&Key::Right));
 }

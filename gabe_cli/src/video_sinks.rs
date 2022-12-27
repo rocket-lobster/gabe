@@ -49,6 +49,16 @@ impl BlendVideoSink {
         }
     }
 
+    pub fn get_frame(&mut self) -> Option<VideoFrame> {
+        if self.inner.is_some() {
+            let ret = self.inner.as_ref().unwrap().clone();
+            self.inner = None;
+            Some(ret)
+        } else {
+            None
+        }
+    }
+
     pub fn into_inner(self) -> Option<VideoFrame> {
         self.inner
     }
