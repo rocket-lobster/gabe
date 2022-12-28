@@ -1,3 +1,5 @@
+use alloc::boxed::*;
+
 /// A trait that accepts input data for later processing
 pub trait Sink<T> {
     fn append(&mut self, value: T);

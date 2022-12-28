@@ -1,5 +1,8 @@
-use core::panic;
-use std::io::{Read, Seek, Write};
+use core::cmp::Ordering;
+
+use alloc::boxed::Box;
+use alloc::string::ToString;
+use alloc::vec::*;
 
 use super::super::mmu::Memory;
 use super::{Cartridge, CartridgeError};
@@ -20,7 +23,7 @@ pub struct Mbc2 {
 }
 
 impl Mbc2 {
-    pub fn power_on(rom: Vec<u8>, rom_size: u8, has_battery: bool) -> Self {
+    pub fn power_on(rom: Box<[u8]>, rom_size: u8, has_battery: bool) -> Self {
         assert!(rom.len() <= MAX_ROM_SIZE as usize);
         let rom_bank_count: u8 = match rom_size {
             0x0 => 0x02, // 32 KB
@@ -31,7 +34,7 @@ impl Mbc2 {
         };
         let ram: Vec<u8> = vec![0; 512];
         Mbc2 {
-            rom: rom.into_boxed_slice(),
+            rom,
             ram: ram.into_boxed_slice(),
             rom_bank: 1,
             rom_bank_count,
@@ -101,16 +104,29 @@ impl Memory for Mbc2 {
 }
 
 impl Cartridge for Mbc2 {
-    fn read_save_file(&mut self, file: &mut std::fs::File) -> Result<(), CartridgeError> {
+    fn read_save_data(&mut self, data: Box<[u8]>) -> Result<(), CartridgeError> {
         if self.has_battery {
             // We have battery-backed RAM available to read from a file
             // If we hit a read error, just propagate up, otherwise we succeed.
-            if let Err(e) = file.rewind() {
-                Err(CartridgeError::Io(e))
-            } else if let Err(e) = file.read(&mut self.ram) {
-                Err(CartridgeError::Io(e))
-            } else {
-                Ok(())
+            match data.len().cmp(&self.ram.len()) {
+                Ordering::Equal => {
+                    self.ram.copy_from_slice(data.as_ref());
+                    Ok(())
+                }
+                Ordering::Greater => {
+                    // Fill RAM with data until full
+                    for (i, v) in self.ram.iter_mut().enumerate() {
+                        *v = data[i];
+                    }
+                    Ok(())
+                }
+                Ordering::Less => {
+                    // Fill RAM with data until out of data
+                    for (i, v) in data.iter().enumerate() {
+                        self.ram[i] = *v;
+                    }
+                    Ok(())
+                }
             }
         } else {
             Err(CartridgeError::Unsupported(
@@ -119,17 +135,11 @@ impl Cartridge for Mbc2 {
         }
     }
 
-    fn write_save_file(&self, file: &mut std::fs::File) -> Result<(), CartridgeError> {
+    fn write_save_data(&self) -> Result<Box<[u8]>, CartridgeError> {
         if self.has_battery {
-            // We have battery-backed RAM available to write to a file
-            // If we hit a write error, just propagate up, otherwise we succeed.
-            if let Err(e) = file.rewind() {
-                Err(CartridgeError::Io(e))
-            } else if let Err(e) = file.write_all(&self.ram) {
-                Err(CartridgeError::Io(e))
-            } else {
-                Ok(())
-            }
+            // We have battery-backed RAM available to maintain save data
+            // Provide cloned RAM data as a pointer
+            Ok(self.ram.clone())
         } else {
             Err(CartridgeError::Unsupported(
                 "Game doesn't support save files via battery-backed RAM.".to_string(),

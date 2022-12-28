@@ -1,7 +1,7 @@
 use super::mmu;
 use super::mmu::InterruptKind;
 use super::mmu::Memory;
-use std::fmt;
+use alloc::fmt::*;
 
 /// The register F holds flag information that are set by ALU
 /// operations. Conditional operations check these flags afterwards.
@@ -185,8 +185,8 @@ pub struct Cpu {
     pub stopped: bool,
 }
 
-impl fmt::Display for Cpu {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Display for Cpu {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         // Implement printing for use in TUI
         writeln!(
             f,

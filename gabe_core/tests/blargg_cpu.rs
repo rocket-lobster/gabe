@@ -8,9 +8,8 @@ use gabe_core::*;
 fn blargg_cpu_instrs() {
     let mut video_sink = common::NullSink;
     let mut audio_sink = common::NullSink;
-    let rom_file = std::path::Path::new("tests/roms/cpu_instrs/cpu_instrs.gb");
-    let save_file = std::path::Path::new("tests/roms/cpu_instrs/cpu_instrs.sav");
-    let mut gb = gb::Gameboy::power_on(rom_file, save_file).unwrap();
+    let rom_data = common::get_rom_data("tests/roms/cpu_instrs/cpu_instrs.gb").unwrap();
+    let mut gb = gb::Gameboy::power_on(rom_data, None);
     let mut result = std::string::String::new();
     loop {
         gb.step(&mut video_sink, &mut audio_sink);

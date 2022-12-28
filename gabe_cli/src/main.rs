@@ -12,9 +12,10 @@ use time_source::TimeSource;
 use std::{
     collections::VecDeque,
     fs::File,
-    io::{Read, Write},
+    io::{Read, Seek, Write},
     path::Path,
     time::Instant,
+    vec,
 };
 
 use clap::{App, Arg};
@@ -57,16 +58,27 @@ struct Emulator {
     gb: Gameboy,
     debugger: Debugger,
     emulated_cycles: u64,
+    save_file: File,
 }
 
 impl Emulator {
     pub fn power_on(rom_path: impl AsRef<Path>, save_path: impl AsRef<Path>, debug: bool) -> Self {
         let debugger = Debugger::new(debug);
-        let gb = Gameboy::power_on(rom_path, save_path).expect("Path invalid");
+        let mut rom_file = File::open(rom_path).unwrap();
+        let mut save_file = File::open(save_path).unwrap();
+        let mut rom_data = vec![];
+        rom_file.read_to_end(&mut rom_data).unwrap();
+        let mut save_data = vec![];
+        save_file.read_to_end(&mut save_data).unwrap();
+        let gb = Gameboy::power_on(
+            rom_data.into_boxed_slice(),
+            Some(save_data.into_boxed_slice()),
+        );
         Emulator {
             gb,
             debugger,
             emulated_cycles: 0,
+            save_file,
         }
     }
 }
@@ -202,6 +214,14 @@ fn main() {
             }
             audio_buffer_sink.append(audio_sink.inner.as_slices().0);
             spin_sleep::sleep(std::time::Duration::from_millis(3));
+        }
+    }
+    if let Some(data) = emu.gb.get_save_data() {
+        if let Err(e) = emu.save_file.rewind() {
+            println! {"{}: No save file written.", e};
+        }
+        if let Err(e) = emu.save_file.write_all(&data) {
+            println! {"{}: Corrupt save file written.", e};
         }
     }
 }

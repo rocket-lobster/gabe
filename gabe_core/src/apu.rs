@@ -170,7 +170,10 @@ impl SquareChannel1 {
     }
 
     fn step_length(&mut self) {
-        if test_bit(self.nr14_freq_high_control, 6) && (self.length_timer > 0) {
+        if test_bit(self.nr14_freq_high_control, 6)
+            && (self.length_timer > 0)
+            && self.channel_enabled
+        {
             self.length_timer -= 1;
 
             if self.length_timer == 0 {
@@ -258,7 +261,7 @@ impl Memory for SquareChannel1 {
                         - (((self.nr14_freq_high_control as u32 & 0b111) << 8)
                             | self.nr13_frequency_low as u32))
                         * 4;
-                    
+
                     self.sweep_timer = extract_bits(self.nr10_sweep_control, 6, 4);
                     if self.sweep_timer == 0 {
                         // Treat period of 0 as 8
@@ -267,7 +270,7 @@ impl Memory for SquareChannel1 {
                     if extract_bits(self.nr10_sweep_control, 2, 0) != 0x0 {
                         // Update sweep state
                         self.sweep_shadow = ((self.nr14_freq_high_control as u32 & 0b111) << 8)
-                        | self.nr13_frequency_low as u32;
+                            | self.nr13_frequency_low as u32;
                         // Sweep shift is non-zero, set sweep-enable to true
                         self.sweep_enabled = true;
                         // Immediately perform frequency calc and overflow check
@@ -957,8 +960,8 @@ pub struct Apu {
 
     /// When any DAC is enabled, a high-pass filter capacitor is slowly applied
     /// to each of the two analog signals.
-    hpf_capacitor_l: f32,
-    hpf_capacitor_r: f32,
+    _hpf_capacitor_l: f32,
+    _hpf_capacitor_r: f32,
 }
 
 impl Apu {
@@ -1036,8 +1039,8 @@ impl Apu {
             },
             cycle_count: 0,
             frame_cycle: 0,
-            hpf_capacitor_l: 0.0,
-            hpf_capacitor_r: 0.0,
+            _hpf_capacitor_l: 0.0,
+            _hpf_capacitor_r: 0.0,
         }
     }
 
@@ -1118,31 +1121,28 @@ impl Apu {
                         (extract_bits(self.nr50_output_control, 6, 4) as f32 + 1.0) / 8.0;
                     let right_vol =
                         (extract_bits(self.nr50_output_control, 2, 0) as f32 + 1.0) / 8.0;
-                    let mut left_output = left_amp * left_vol;
-                    (left_output, self.hpf_capacitor_l) =
-                        self.high_pass_filter(left_output, self.hpf_capacitor_l);
-                    let mut right_output = right_amp * right_vol;
-                    (right_output, self.hpf_capacitor_r) =
-                        self.high_pass_filter(right_output, self.hpf_capacitor_r);
+                    let left_output = left_amp * left_vol;
+                    let right_output = right_amp * right_vol;
                     audio_sink.append(((left_output), (right_output)));
                 }
             }
         }
     }
 
-    fn high_pass_filter(&mut self, in_sample: f32, capacitor: f32) -> (f32, f32) {
-        let mut out_sample = 0.0;
-        let mut out_cap = 0.0;
-        let charge_factor = 0.999958f32.powf(SAMPLE_RATE_PERIOD as f32);
-        if self.square1.dac_enabled
-            || self.square2.dac_enabled
-            || test_bit(self.wave.nr30_dac_enable, 7)
-        {
-            out_sample = in_sample - capacitor;
-            out_cap = in_sample - out_sample * charge_factor;
-        }
-        (out_sample, out_cap)
-    }
+    // TODO: no_std prevents the powf function, rework without math
+    // fn high_pass_filter(&mut self, in_sample: f32, capacitor: f32) -> (f32, f32) {
+    //     let mut out_sample = 0.0;
+    //     let mut out_cap = 0.0;
+    //     let charge_factor = 0.999958f32.powf(SAMPLE_RATE_PERIOD as f32);
+    //     if self.square1.dac_enabled
+    //         || self.square2.dac_enabled
+    //         || test_bit(self.wave.nr30_dac_enable, 7)
+    //     {
+    //         out_sample = in_sample - capacitor;
+    //         out_cap = in_sample - out_sample * charge_factor;
+    //     }
+    //     (out_sample, out_cap)
+    // }
 }
 
 impl Memory for Apu {
@@ -1200,8 +1200,10 @@ impl Memory for Apu {
                         self.square1 = SquareChannel1::default();
                         self.square2 = SquareChannel2::default();
                         // Copy over wave ram, shouldn't be affected by APU power
-                        let mut new_wave = WaveChannel::default();
-                        new_wave.wave_ram = self.wave.wave_ram.clone();
+                        let new_wave = WaveChannel {
+                            wave_ram: self.wave.wave_ram,
+                            ..Default::default()
+                        };
                         self.wave = new_wave;
                         self.noise = NoiseChannel::default();
                     }

@@ -1,7 +1,5 @@
-use std::fs::{File, OpenOptions};
-use std::io::Read;
-use std::path::Path;
-use std::{io, panic};
+use alloc::boxed::*;
+use alloc::vec::*;
 
 use super::apu::Apu;
 use super::cartridge::Cartridge;
@@ -74,7 +72,6 @@ pub trait Memory {
 /// reading and writing into each block, no logic is performed otherwise.
 pub struct Mmu {
     pub cart: Box<dyn Cartridge>,
-    save_file: File,
     apu: Apu,
     vram: Vram,
     wram: Wram,
@@ -92,22 +89,14 @@ impl Mmu {
     /// Initializes the MMU with the given ROM path.
     /// Opens the given file and reads cartridge header information to find
     /// the MBC type.
-    pub fn power_on(rom_path: impl AsRef<Path>, save_path: impl AsRef<Path>) -> io::Result<Self> {
+    pub fn power_on(rom_data: Box<[u8]>, save_data: Option<Box<[u8]>>) -> Self {
         use super::cartridge::mbc0::Mbc0;
         use super::cartridge::mbc1::Mbc1;
         use super::cartridge::mbc2::Mbc2;
         use super::cartridge::mbc3::Mbc3;
 
-        let mut rom_file = File::open(rom_path.as_ref())?;
-        let mut save_file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .open(save_path.as_ref())?;
-        let mut rom_data = Vec::new();
-        rom_file.read_to_end(&mut rom_data)?;
         let title =
-            std::str::from_utf8(&rom_data[0x134..0x13F]).map_or_else(|_| "Invalid Title", |v| v);
+            core::str::from_utf8(&rom_data[0x134..0x13F]).map_or_else(|_| "Invalid Title", |v| v);
         let rom_size = rom_data[0x148];
         let ram_size = rom_data[0x149];
         info!("Cartridge Info:");
@@ -168,12 +157,13 @@ impl Mmu {
             }
             _ => unimplemented!("MBC value {:02X} not supported!", rom_data[0x147]),
         };
-        if let Err(e) = cart.read_save_file(&mut save_file) {
-            info!("Save file will not be written: {}", e);
+        if let Some(data) = save_data {
+            if let Err(e) = cart.read_save_data(data) {
+                info!("Save file will not be written: {}", e);
+            }
         }
-        let mmu = Mmu {
+        Mmu {
             cart,
-            save_file,
             apu: Apu::power_on(),
             vram: Vram::power_on(),
             wram: Wram::power_on(),
@@ -185,9 +175,7 @@ impl Mmu {
             ie: 0x00,
             dma_state: DmaState::Stopped,
             previous_dma: 0xFF,
-        };
-
-        Ok(mmu)
+        }
     }
 
     /// Updates all memory components to align with the number of cycles
@@ -237,7 +225,7 @@ impl Mmu {
     /// Debug function. Returns a simple Vec of the requested range of data. Only returns
     /// data visible to MMU, so any non-selected banks or block-internal data not memory-mapped
     /// will not be returned.
-    pub fn get_memory_range(&self, range: std::ops::Range<usize>) -> Vec<u8> {
+    pub fn get_memory_range(&self, range: core::ops::Range<usize>) -> Vec<u8> {
         let mut vec: Vec<u8> = Vec::new();
         for addr in range {
             // Check the bounds of u16
@@ -363,16 +351,6 @@ impl Memory for Mmu {
                 0xFFFF => self.ie = val,
                 _ => self.unassigned_write(addr, val),
             }
-        }
-    }
-}
-
-impl Drop for Mmu {
-    fn drop(&mut self) {
-        if let Err(e) = self.cart.write_save_file(&mut self.save_file) {
-            info!("Save file not written: {}", e);
-        } else {
-            info!("Save file written.");
         }
     }
 }

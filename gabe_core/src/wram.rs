@@ -1,4 +1,5 @@
 use super::mmu::Memory;
+use alloc::vec::*;
 
 pub struct Wram {
     memory: Vec<u8>,

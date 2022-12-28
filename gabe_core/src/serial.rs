@@ -13,10 +13,7 @@ pub struct Serial {
 
 impl Serial {
     pub fn power_on() -> Self {
-        Serial {
-            sb: 0,
-            sc: 0,
-        }
+        Serial { sb: 0, sc: 0 }
     }
 
     pub fn update(&mut self) {

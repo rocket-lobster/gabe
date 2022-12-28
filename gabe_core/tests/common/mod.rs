@@ -1,6 +1,10 @@
 #![allow(dead_code)]
 
-use std::io::Write;
+use std::{
+    fs::File,
+    io::{Read, Write},
+    path::Path,
+};
 
 use gabe_core::sink::*;
 
@@ -48,6 +52,13 @@ impl Sink<AudioFrame> for NullSink {
     fn append(&mut self, _value: AudioFrame) {}
 }
 
+pub fn get_rom_data(path: impl AsRef<Path>) -> std::io::Result<Box<[u8]>> {
+    let mut f = File::open(path)?;
+    let mut rom_data = vec![];
+    f.read_to_end(&mut rom_data)?;
+    Ok(rom_data.into_boxed_slice())
+}
+
 pub fn run_dmg_sound_case(gb: &mut gabe_core::gb::Gameboy) -> bool {
     let mut video_sink = NullSink;
     let mut audio_sink = NullSink;
@@ -63,7 +74,7 @@ pub fn run_dmg_sound_case(gb: &mut gabe_core::gb::Gameboy) -> bool {
             if (data[0] != 0x80) && (cycles > CYCLE_TIMEOUT) {
                 return data[0] == 0;
             } else {
-                let str_data = gb.get_memory_range(output_ptr .. output_ptr + 5);
+                let str_data = gb.get_memory_range(output_ptr..output_ptr + 5);
                 for c in str_data.into_iter() {
                     if *c == 0 {
                         break;

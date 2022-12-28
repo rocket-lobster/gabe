@@ -1,3 +1,6 @@
+use alloc::boxed::Box;
+use alloc::string::*;
+
 use super::super::mmu::Memory;
 use super::{Cartridge, CartridgeError};
 
@@ -9,11 +12,11 @@ const CART_ROM_SIZE: usize = CART_ROM_END - CART_ROM_START + 1;
 /// circuitry to control memory banks. Such cartridges only have 32 Kb
 /// of ROM storage and no RAM storage and no bank switching.
 pub struct Mbc0 {
-    rom: Vec<u8>,
+    rom: Box<[u8]>,
 }
 
 impl Mbc0 {
-    pub fn power_on(rom: Vec<u8>) -> Self {
+    pub fn power_on(rom: Box<[u8]>) -> Self {
         assert!(rom.len() <= CART_ROM_SIZE);
         Mbc0 { rom }
     }
@@ -38,14 +41,14 @@ impl Memory for Mbc0 {
 }
 
 impl Cartridge for Mbc0 {
-    fn read_save_file(&mut self, _file: &mut std::fs::File) -> Result<(), CartridgeError> {
+    fn read_save_data(&mut self, _data: Box<[u8]>) -> Result<(), CartridgeError> {
         // No RAM file to write save to, do nothing
         Err(CartridgeError::Unsupported(
             "MBC0 does not support save file writing.".to_string(),
         ))
     }
 
-    fn write_save_file(&self, _file: &mut std::fs::File) -> Result<(), CartridgeError> {
+    fn write_save_data(&self) -> Result<Box<[u8]>, CartridgeError> {
         // No RAM file to write save to, do nothing
         Err(CartridgeError::Unsupported(
             "MBC0 does not support save file writing.".to_string(),

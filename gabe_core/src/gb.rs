@@ -3,8 +3,7 @@ use super::mmu;
 use super::mmu::Memory;
 use super::sink::*;
 
-use std::io;
-use std::path::Path;
+use alloc::boxed::*;
 
 pub struct Gameboy {
     cpu: cpu::Cpu,
@@ -36,12 +35,12 @@ pub struct GbDebug {
 impl Gameboy {
     /// Initializes Gameboy state to begin emulation on provided
     /// binary file
-    pub fn power_on(rom_path: impl AsRef<Path>, save_path: impl AsRef<Path>) -> io::Result<Self> {
-        let mmu = mmu::Mmu::power_on(rom_path, save_path)?;
-        Ok(Gameboy {
+    pub fn power_on(rom_data: Box<[u8]>, save_data: Option<Box<[u8]>>) -> Self {
+        let mmu = mmu::Mmu::power_on(rom_data, save_data);
+        Gameboy {
             cpu: cpu::Cpu::power_on(),
             mmu,
-        })
+        }
     }
 
     /// Executes one CPU instruction and updates the other
@@ -61,6 +60,14 @@ impl Gameboy {
 
     pub fn update_key_state(&mut self, key: GbKeys, pressed: bool) {
         self.mmu.joypad.set_key_pressed(key, pressed);
+    }
+
+    pub fn get_save_data(&self) -> Option<Box<[u8]>> {
+        let result = self.mmu.cart.write_save_data();
+        match result {
+            Ok(d) => Some(d),
+            Err(_) => None,
+        }
     }
 
     pub fn poll_serial(&mut self) -> Option<u8> {
@@ -92,7 +99,7 @@ impl Gameboy {
 
     /// Returns a boxed slice of u8 values contained within the given range of usize values.
     /// Only returns values as read via the CPU, so forbidden or fixed reads will not be bypassed
-    pub fn get_memory_range(&self, range: std::ops::Range<usize>) -> Box<[u8]> {
+    pub fn get_memory_range(&self, range: core::ops::Range<usize>) -> Box<[u8]> {
         self.mmu.get_memory_range(range).into_boxed_slice()
     }
 }

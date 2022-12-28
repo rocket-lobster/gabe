@@ -1,3 +1,6 @@
+use alloc::string::*;
+use alloc::vec::*;
+
 /// Given a block of code separated into u8 values, interpret each byte as a valid Gameboy opcode,
 /// and convert it and its operands into a human-readable mnemonic.
 /// Note: This converts data naively, and assumes the initial start point is an opcode and not the

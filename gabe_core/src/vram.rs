@@ -1,7 +1,8 @@
-use std::{panic, usize};
-
 use super::mmu::{InterruptKind, Memory};
 use super::sink::*;
+
+use alloc::boxed::*;
+use alloc::vec::*;
 
 struct Lcdc {
     /// Bit 7: Enables LCD display on true, disables on false.
