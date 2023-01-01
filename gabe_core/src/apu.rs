@@ -75,6 +75,10 @@ struct SquareChannel1 {
     /// Set on channel trigger and updated each time the sweep is updated
     sweep_shadow: u32,
 
+    /// Tracks if a sweep calculation has been completed, for the purpose of disabling channel
+    /// when changing from negative sweep to positive
+    sweep_occurred: bool,
+
     /// The volume of the channel, modified by the volume envelope if necessary
     /// Starts at NR12 [7:4] when channel is triggered
     current_volume: u8,
@@ -119,40 +123,50 @@ impl SquareChannel1 {
     }
 
     fn step_sweep(&mut self) {
-        if self.sweep_timer == 0 && self.sweep_enabled {
-            self.sweep_timer = extract_bits(self.nr10_sweep_control, 6, 4);
+        if self.sweep_enabled {
+            self.sweep_timer = self.sweep_timer.saturating_sub(1);
             if self.sweep_timer == 0 {
-                // Treat period of 0 as 8
-                self.sweep_timer = 8;
-            }
-            // Calculate new freq and check overflow
-            let mut freq =
-                (self.sweep_shadow >> extract_bits(self.nr10_sweep_control, 2, 0)) as i32;
-            if test_bit(self.nr10_sweep_control, 3) {
-                freq = -freq;
-            }
-            freq += self.sweep_shadow as i32;
-            if !(0..=2047).contains(&freq) {
-                self.channel_enabled = false;
-            } else if extract_bits(self.nr10_sweep_control, 2, 0) != 0 {
-                // Write the new freq into shadow and NR13+NR14
-                self.sweep_shadow = freq as u32;
-                self.nr13_frequency_low = (self.sweep_shadow & 0xFF) as u8;
-                self.nr14_freq_high_control =
-                    (self.nr14_freq_high_control & 0xF8) | ((self.sweep_shadow >> 8) & 0x7) as u8;
-
-                // Freq calc and overflow check again
-                freq = (self.sweep_shadow >> extract_bits(self.nr10_sweep_control, 2, 0)) as i32;
-                if test_bit(self.nr10_sweep_control, 3) {
-                    freq = -freq;
-                }
-                freq += self.sweep_shadow as i32;
-                if !(0..=2047).contains(&freq) {
-                    self.channel_enabled = false;
-                }
+               self.channel_enabled = self.check_sweep(false);
             }
         }
-        self.sweep_timer = self.sweep_timer.saturating_sub(1);
+    }
+
+    fn check_sweep(&mut self, initial: bool) -> bool {
+        if initial || extract_bits(self.nr10_sweep_control, 6, 4) != 0 {
+            let mut freq: i32 = self.sweep_shadow as i32;
+            // Calculate new freq and check overflow
+            if test_bit(self.nr10_sweep_control, 3) {
+                freq -= (freq >> extract_bits(self.nr10_sweep_control, 2, 0)) as i32;
+                if freq >= 0 && !initial {
+                    self.sweep_shadow = freq as u32;
+                    self.nr13_frequency_low = (self.sweep_shadow & 0xFF) as u8;
+                    self.nr14_freq_high_control = (self.nr14_freq_high_control & 0xF8)
+                        | ((self.sweep_shadow >> 8) & 0x7) as u8;
+                }
+            } else {
+                freq += (freq >> extract_bits(self.nr10_sweep_control, 2, 0)) as i32;
+                if freq <= 2047 {
+                    if !initial && extract_bits(self.nr10_sweep_control, 2, 0) != 0 {
+                        self.sweep_shadow = freq as u32;
+                        self.nr13_frequency_low = (self.sweep_shadow & 0xFF) as u8;
+                        self.nr14_freq_high_control = (self.nr14_freq_high_control & 0xF8)
+                            | ((self.sweep_shadow >> 8) & 0x7) as u8;
+                        // Run limited check again with new freq
+                        if !self.check_sweep(true) {
+                            return false;
+                        }
+                    }
+                } else {
+                    return false;
+                }
+            }
+            self.sweep_occurred = true;
+        }
+        self.sweep_timer = extract_bits(self.nr10_sweep_control, 6, 4);
+        if self.sweep_timer == 0 {
+            self.sweep_timer = 8;
+        }
+        true
     }
 
     fn step_envelope(&mut self) {
@@ -170,10 +184,7 @@ impl SquareChannel1 {
     }
 
     fn step_length(&mut self) {
-        if test_bit(self.nr14_freq_high_control, 6)
-            && (self.length_timer > 0)
-            && self.channel_enabled
-        {
+        if test_bit(self.nr14_freq_high_control, 6) && (self.length_timer > 0) {
             self.length_timer -= 1;
 
             if self.length_timer == 0 {
@@ -216,10 +227,18 @@ impl Memory for SquareChannel1 {
     fn write_byte(&mut self, addr: u16, val: u8) {
         assert!((0xFF10..=0xFF14).contains(&addr));
         match addr {
-            0xFF10 => self.nr10_sweep_control = val,
+            0xFF10 => {
+                let old_direction = test_bit(self.nr10_sweep_control, 3);
+                self.nr10_sweep_control = val;
+                // If we go from negative to positive sweep after starting sweep, diable channel
+                if self.sweep_occurred && old_direction && !test_bit(val, 3) {
+                    self.channel_enabled = false;
+                }
+                self.sweep_occurred = false;
+            }
             0xFF11 => {
                 self.nr11_length_data = val;
-                self.length_timer = 64 - extract_bits(self.nr11_length_data, 5, 0);
+                self.length_timer = 64 - extract_bits(val, 5, 0);
             }
             0xFF12 => {
                 self.nr12_volume_control = val;
@@ -267,25 +286,16 @@ impl Memory for SquareChannel1 {
                         // Treat period of 0 as 8
                         self.sweep_timer = 8;
                     }
+                    self.sweep_enabled = self.sweep_timer != 8 || extract_bits(self.nr10_sweep_control, 2, 0) != 0x0;
+
+                    self.sweep_occurred = false;
+                        
+                    // Update sweep state
+                    self.sweep_shadow = ((self.nr14_freq_high_control as u32 & 0b111) << 8)
+                        | self.nr13_frequency_low as u32;
+                    
                     if extract_bits(self.nr10_sweep_control, 2, 0) != 0x0 {
-                        // Update sweep state
-                        self.sweep_shadow = ((self.nr14_freq_high_control as u32 & 0b111) << 8)
-                            | self.nr13_frequency_low as u32;
-                        // Sweep shift is non-zero, set sweep-enable to true
-                        self.sweep_enabled = true;
-                        // Immediately perform frequency calc and overflow check
-                        let mut freq = (self.sweep_shadow
-                            >> extract_bits(self.nr10_sweep_control, 2, 0))
-                            as i32;
-                        if test_bit(self.nr10_sweep_control, 3) {
-                            freq = -freq;
-                        }
-                        freq += self.sweep_shadow as i32;
-                        if freq > 2047 {
-                            self.channel_enabled = false;
-                        }
-                    } else {
-                        self.sweep_enabled = false;
+                        self.channel_enabled = self.check_sweep(true);
                     }
                     // Reload envelope period
                     self.envelope_period = extract_bits(self.nr12_volume_control, 2, 0);
@@ -297,6 +307,7 @@ impl Memory for SquareChannel1 {
 
                     if !self.dac_enabled {
                         self.channel_enabled = false;
+                        self.sweep_enabled = false;
                     }
                 }
             }
@@ -983,6 +994,7 @@ impl Apu {
                 sweep_timer: 0,
                 sweep_enabled: false,
                 sweep_shadow: 0,
+                sweep_occurred: false,
                 current_volume: 0,
                 volume_increasing: false,
                 envelope_timer: 0,

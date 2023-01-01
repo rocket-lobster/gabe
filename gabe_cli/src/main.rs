@@ -11,7 +11,7 @@ use time_source::TimeSource;
 
 use std::{
     collections::VecDeque,
-    fs::File,
+    fs::{File, OpenOptions},
     io::{Read, Seek, Write},
     path::Path,
     time::Instant,
@@ -65,7 +65,7 @@ impl Emulator {
     pub fn power_on(rom_path: impl AsRef<Path>, save_path: impl AsRef<Path>, debug: bool) -> Self {
         let debugger = Debugger::new(debug);
         let mut rom_file = File::open(rom_path).unwrap();
-        let mut save_file = File::open(save_path).unwrap();
+        let mut save_file = OpenOptions::new().write(true).read(true).create(true).open(save_path).unwrap();
         let mut rom_data = vec![];
         rom_file.read_to_end(&mut rom_data).unwrap();
         let mut save_data = vec![];
