@@ -311,7 +311,7 @@ impl Vram {
             window_coords: (0x0, 0x0),
             scanline_cycles: 0,
             obj_list: Vec::with_capacity(40),
-            screen_data: vec![0x0; 4 * SCREEN_WIDTH * SCREEN_HEIGHT].into_boxed_slice(),
+            screen_data: vec![0x0; 3 * SCREEN_WIDTH * SCREEN_HEIGHT].into_boxed_slice(),
             has_new_frame: false,
             memory: vec![0; 0x2000],
             oam: vec![0; 0xA0],
