@@ -159,8 +159,9 @@ impl Memory for Stat {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug, Default)]
 enum GrayShades {
+    #[default]
     White = 0,
     LightGray = 1,
     DarkGray = 2,
@@ -214,6 +215,14 @@ impl Memory for PaletteData {
         self.color2 = colors[2];
         self.color3 = colors[3];
     }
+}
+
+#[derive(Default)]
+struct PixelInfo {
+    color_idx: u8,
+    palette: u8,
+    _sprite_prio: u8,
+    bg_prio: bool,
 }
 
 /// Type alias for the rendered screen data
@@ -286,15 +295,11 @@ pub struct Vram {
     /// represented by the next 3 values, and the next row doesn't begin until the SCREEN_WIDTH * 3 value.
     screen_data: FrameData,
 
-    /// If true, a new frame has been completed for rendering. Can be requested from VRAM as long as
-    /// LCD is still within V-Blank
-    has_new_frame: bool,
-
     /// VRAM data
-    memory: Vec<u8>,
+    memory: Box<[u8]>,
 
     /// OAM Data
-    oam: Vec<u8>,
+    oam: Box<[u8]>,
 }
 
 impl Vram {
@@ -311,10 +316,9 @@ impl Vram {
             window_coords: (0x0, 0x0),
             scanline_cycles: 0,
             obj_list: Vec::with_capacity(40),
-            screen_data: vec![0x0; 4 * SCREEN_WIDTH * SCREEN_HEIGHT].into_boxed_slice(),
-            has_new_frame: false,
-            memory: vec![0; 0x2000],
-            oam: vec![0; 0xA0],
+            screen_data: vec![0x0; 3 * SCREEN_WIDTH * SCREEN_HEIGHT].into_boxed_slice(),
+            memory: vec![0; 0x2000].into_boxed_slice(),
+            oam: vec![0; 0xA0].into_boxed_slice(),
         };
 
         ret.bgp.write_byte(0xFF47, 0xFC);
@@ -367,7 +371,6 @@ impl Vram {
                 // If we are just entering V-Blank
                 self.stat.mode_flag = LCDMode::Mode1;
                 // New frame ready to be rendered
-                self.has_new_frame = true;
                 video_sink.append(self.screen_data.clone());
                 interrupts.push(InterruptKind::VBlank);
                 if self.stat.vblank_interrupt && !interrupts.contains(&InterruptKind::LcdStat) {
@@ -399,14 +402,7 @@ impl Vram {
                 if self.stat.hblank_interrupt && !interrupts.contains(&InterruptKind::LcdStat) {
                     interrupts.push(InterruptKind::LcdStat);
                 }
-                // Compute and "render" the scanline into the LCD data
-                if self.lcdc.background_enable {
-                    self.draw_background();
-                }
-
-                if self.lcdc.obj_enable {
-                    self.draw_sprites();
-                }
+                self.draw_scanline();
             }
         }
 
@@ -438,24 +434,112 @@ impl Vram {
         }
     }
 
+
+    /// Compute and "render" the scanline into the internal LCD data state
+    fn draw_scanline(&mut self) {
+        for p in 0..SCREEN_WIDTH {
+            let bg_pixel = if self.lcdc.background_enable {
+                Some(self.get_background_pixel(p as u8))
+            } else {
+                None
+            };
+    
+            let sprite_pixel = if self.lcdc.obj_enable {
+                Some(self.get_sprite_pixel(p as u8))
+            } else {
+                None
+            };
+
+            let pixel_shade = if let (Some(b), Some(p)) = (&bg_pixel, &sprite_pixel) {
+                if p.color_idx > 0 && !p.bg_prio {
+                    match p.palette {
+                        0 => {
+                            match p.color_idx {
+                                0 => self.obp0.color0,
+                                1 => self.obp0.color1,
+                                2 => self.obp0.color2,
+                                3 => self.obp0.color3,
+                                _ => unreachable!(),
+                            }
+                        }
+                        1 => {
+                            match p.color_idx {
+                                0 => self.obp1.color0,
+                                1 => self.obp1.color1,
+                                2 => self.obp1.color2,
+                                3 => self.obp1.color3,
+                                _ => unreachable!(),
+                            }
+                        }
+                        _ => unreachable!()
+                    }
+                } else {
+                    match b.color_idx {
+                        0 => self.bgp.color0,
+                        1 => self.bgp.color1,
+                        2 => self.bgp.color2,
+                        3 => self.bgp.color3,
+                        _ => unreachable!(),
+                    }
+                }
+            } else if let (Some(b), None) = (&bg_pixel, &sprite_pixel) {
+                match b.color_idx {
+                    0 => self.bgp.color0,
+                    1 => self.bgp.color1,
+                    2 => self.bgp.color2,
+                    3 => self.bgp.color3,
+                    _ => unreachable!(),
+                }
+            } else if let (None, Some(p)) = (&bg_pixel, &sprite_pixel) {
+                match p.palette {
+                    0 => {
+                        match p.color_idx {
+                            0 => self.obp0.color0,
+                            1 => self.obp0.color1,
+                            2 => self.obp0.color2,
+                            3 => self.obp0.color3,
+                            _ => unreachable!(),
+                        }
+                    }
+                    1 => {
+                        match p.color_idx {
+                            0 => self.obp1.color0,
+                            1 => self.obp1.color1,
+                            2 => self.obp1.color2,
+                            3 => self.obp1.color3,
+                            _ => unreachable!(),
+                        }
+                    }
+                    _ => unreachable!()
+                }
+            } else {
+                // Neither are present, return a White/Color 1
+                GrayShades::White
+            };
+            let pixel_rgb = Self::shade_to_rgb_u8(&pixel_shade);
+
+            self.screen_data[((self.ly as usize * (SCREEN_WIDTH * 3)) + (p * 3))] = pixel_rgb.0;
+            self.screen_data[((self.ly as usize * (SCREEN_WIDTH * 3)) + (p * 3) + 1)] = pixel_rgb.1;
+            self.screen_data[((self.ly as usize * (SCREEN_WIDTH * 3)) + (p * 3) + 2)] = pixel_rgb.2;
+        }
+    }
+
     /// Check internal state to determine what horizontal scanline background
     /// pixels should be written to `screen_data`. Includes checking if rendering
     /// window tiles in addition to background tiles. Only called during H-Blank,
     /// and fills the scanline as provided by `ly`, assuming we're not in V-Blank
-    fn draw_background(&mut self) {
-        // For each pixel in the current scanline given by LY
-        for p in 0..SCREEN_WIDTH {
-            // Get the tile data index and pixel offsets, either from the window map or the background map
+    fn get_background_pixel(&mut self, pixel: u8) -> PixelInfo {
+                    // Get the tile data index and pixel offsets, either from the window map or the background map
             let (mut tile_data_base, tile_pixel_x, tile_pixel_y) = if self.lcdc.window_enable
-                && p as u8 >= self.window_coords.0.saturating_sub(7)
+                && pixel >= self.window_coords.0.saturating_sub(7)
                 && self.ly >= self.window_coords.1
             {
                 // We are inside the window, so grab window tiles
-                let tile_x: u8 = (p as u8 - self.window_coords.0.saturating_sub(7)) / 8;
+                let tile_x: u8 = (pixel - self.window_coords.0.saturating_sub(7)) / 8;
                 let tile_y: u8 = (self.ly - self.window_coords.1) / 8;
 
                 // Get the pixel coordinates for the tile
-                let tile_pixel_x: u8 = (p as u8 - self.window_coords.0.saturating_sub(7)) % 8;
+                let tile_pixel_x: u8 = (pixel - self.window_coords.0.saturating_sub(7)) % 8;
                 let tile_pixel_y: u8 = (self.ly - self.window_coords.1) % 8;
 
                 // Get the tile map offset from what tile we are using
@@ -478,11 +562,11 @@ impl Vram {
                 )
             } else {
                 // No window, just grab from background map using scroll coords
-                let tile_x: u8 = self.scroll_coords.0.wrapping_add(p as u8) / 8;
+                let tile_x: u8 = self.scroll_coords.0.wrapping_add(pixel) / 8;
                 let tile_y: u8 = self.scroll_coords.1.wrapping_add(self.ly) / 8;
 
                 // Get the pixel coordinates for the tile
-                let tile_pixel_x: u8 = self.scroll_coords.0.wrapping_add(p as u8) % 8;
+                let tile_pixel_x: u8 = self.scroll_coords.0.wrapping_add(pixel) % 8;
                 let tile_pixel_y: u8 = self.scroll_coords.1.wrapping_add(self.ly) % 8;
 
                 // Get the tile map offset from what tile we are using
@@ -529,30 +613,16 @@ impl Vram {
             let pixel_shift = tile_pixel_x ^ 0x7;
             let tile_color_number = (((tile_colors_msb >> pixel_shift) & 0x1) << 1)
                 | ((tile_colors_lsb >> pixel_shift) & 0x1);
-
-            let pixel_shade = match tile_color_number {
-                0 => self.bgp.color0,
-                1 => self.bgp.color1,
-                2 => self.bgp.color2,
-                3 => self.bgp.color3,
-                _ => panic!("Incorrect color number selection logic."),
-            };
-
-            let pixel_rgb = Self::shade_to_rgb_u8(&pixel_shade);
-
-            self.screen_data[((self.ly as usize * (SCREEN_WIDTH * 3)) + (p * 3))] = pixel_rgb.0;
-            self.screen_data[((self.ly as usize * (SCREEN_WIDTH * 3)) + (p * 3) + 1)] = pixel_rgb.1;
-            self.screen_data[((self.ly as usize * (SCREEN_WIDTH * 3)) + (p * 3) + 2)] = pixel_rgb.2;
+            
+            PixelInfo { color_idx: tile_color_number, palette: 0, _sprite_prio: 0, bg_prio: false }
         }
-    }
 
     /// Called after `draw_background` fills scanline `ly` with data inside `screen_data`
     /// with background and window tiles. Goes through OBJ memory to determine the
     /// sprites to be drawn over the background tiles, and writes them in the same
     /// `ly` scanline within `screen_data`.
-    fn draw_sprites(&mut self) {
-        for p in 0..SCREEN_WIDTH {
-            let mut lowest_x = 0xFFu8;
+    fn get_sprite_pixel(&mut self, pixel: u8) -> PixelInfo {
+            let mut ret = PixelInfo::default();
             // Once all OBJs are found, go through the line and check the valid OBJs for the current scanline pixel being placed
             // Go in reverse so that the first valid OAM entries override past ones
             for i in self.obj_list.iter().rev() {
@@ -562,12 +632,12 @@ impl Vram {
                 let attribs = self.oam[((i * 4) + 3) as usize];
 
                 // Check x-pos for this OBJ
-                if x_pos > p as u8 && x_pos <= p as u8 + 8 {
-                    let tile_pixel_x = p as u8 + 8 - x_pos;
+                if x_pos > pixel && x_pos <= pixel + 8 {
+                    let tile_pixel_x = pixel + 8 - x_pos;
                     let mut tile_pixel_y = (self.ly + 16).wrapping_sub(y_pos);
 
                     // Parse attributes
-                    let _bg_prio = (attribs & 0b1000_0000) != 0;
+                    let bg_prio = (attribs & 0b1000_0000) != 0;
                     let y_flip = (attribs & 0b0100_0000) != 0;
                     let x_flip = (attribs & 0b0010_0000) != 0;
                     let obp1 = (attribs & 0b0001_0000) != 0;
@@ -614,40 +684,12 @@ impl Vram {
                     let tile_color_number = (((tile_colors_msb >> pixel_shift) & 0x1) << 1)
                         | ((tile_colors_lsb >> pixel_shift) & 0x1);
 
-                    let pixel_shade = if obp1 {
-                        match tile_color_number {
-                            0 => continue, // Color 0 is transparent, ignore
-                            1 => self.obp1.color1,
-                            2 => self.obp1.color2,
-                            3 => self.obp1.color3,
-                            _ => panic!("Incorrect color number selection logic."),
-                        }
-                    } else {
-                        match tile_color_number {
-                            0 => continue, // Color 0 is transparent, ignore
-                            1 => self.obp0.color1,
-                            2 => self.obp0.color2,
-                            3 => self.obp0.color3,
-                            _ => panic!("Incorrect color number selection logic."),
-                        }
-                    };
-
-                    if x_pos <= lowest_x {
-                        // This OBJ has higher priority than any previous one
-                        lowest_x = x_pos;
+                    if tile_color_number != 0 {
+                        ret = PixelInfo { color_idx: tile_color_number, palette: obp1 as u8, _sprite_prio: 0, bg_prio };
                     }
-
-                    let pixel_rgb = Self::shade_to_rgb_u8(&pixel_shade);
-
-                    self.screen_data[((self.ly as usize * (SCREEN_WIDTH * 3)) + (p * 3))] =
-                        pixel_rgb.0;
-                    self.screen_data[((self.ly as usize * (SCREEN_WIDTH * 3)) + (p * 3) + 1)] =
-                        pixel_rgb.1;
-                    self.screen_data[((self.ly as usize * (SCREEN_WIDTH * 3)) + (p * 3) + 2)] =
-                        pixel_rgb.2;
                 }
             }
-        }
+            ret
     }
 
     /// Converts the given GrayShade enum value into a tuple of

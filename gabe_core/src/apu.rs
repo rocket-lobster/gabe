@@ -73,7 +73,7 @@ struct SquareChannel1 {
 
     /// Internal frequency register that holds the frequencies currently being sweeped.
     /// Set on channel trigger and updated each time the sweep is updated
-    sweep_shadow: u32,
+    sweep_shadow: i32,
 
     /// Tracks if a sweep calculation has been completed, for the purpose of disabling channel
     /// when changing from negative sweep to positive
@@ -133,21 +133,21 @@ impl SquareChannel1 {
 
     fn check_sweep(&mut self, initial: bool) -> bool {
         if initial || extract_bits(self.nr10_sweep_control, 6, 4) != 0 {
-            let mut freq: i32 = self.sweep_shadow as i32;
+            let mut freq: i32 = self.sweep_shadow;
             // Calculate new freq and check overflow
             if test_bit(self.nr10_sweep_control, 3) {
-                freq -= (freq >> extract_bits(self.nr10_sweep_control, 2, 0)) as i32;
+                freq -= freq >> extract_bits(self.nr10_sweep_control, 2, 0);
                 if freq >= 0 && !initial {
-                    self.sweep_shadow = freq as u32;
+                    self.sweep_shadow = freq;
                     self.nr13_frequency_low = (self.sweep_shadow & 0xFF) as u8;
                     self.nr14_freq_high_control = (self.nr14_freq_high_control & 0xF8)
                         | ((self.sweep_shadow >> 8) & 0x7) as u8;
                 }
             } else {
-                freq += (freq >> extract_bits(self.nr10_sweep_control, 2, 0)) as i32;
+                freq += freq >> extract_bits(self.nr10_sweep_control, 2, 0);
                 if freq <= 2047 {
                     if !initial && extract_bits(self.nr10_sweep_control, 2, 0) != 0 {
-                        self.sweep_shadow = freq as u32;
+                        self.sweep_shadow = freq;
                         self.nr13_frequency_low = (self.sweep_shadow & 0xFF) as u8;
                         self.nr14_freq_high_control = (self.nr14_freq_high_control & 0xF8)
                             | ((self.sweep_shadow >> 8) & 0x7) as u8;
@@ -291,8 +291,8 @@ impl Memory for SquareChannel1 {
                     self.sweep_occurred = false;
                         
                     // Update sweep state
-                    self.sweep_shadow = ((self.nr14_freq_high_control as u32 & 0b111) << 8)
-                        | self.nr13_frequency_low as u32;
+                    self.sweep_shadow = ((self.nr14_freq_high_control as i32 & 0b111) << 8)
+                        | self.nr13_frequency_low as i32;
                     
                     if extract_bits(self.nr10_sweep_control, 2, 0) != 0x0 {
                         self.channel_enabled = self.check_sweep(true);

@@ -43,13 +43,12 @@ fn blargg_dmg_sound_06overflow_trigger() {
     assert!(common::run_dmg_sound_case(&mut gb));
 }
 
-// #[test]
-// fn blargg_dmg_sound_07len_sweep_period_sync() {
-//     let rom_file = std::path::Path::new("tests/roms/dmg_sound/07-len_sweep_period_sync.gb");
-//     let save_file = std::path::Path::new("tests/roms/dmg_sound/07-len_sweep_period_sync.sav");
-//     let mut gb = gb::Gameboy::power_on(rom_file, save_file).unwrap();
-//     assert!(common::run_dmg_sound_case(&mut gb));
-// }
+#[test]
+fn blargg_dmg_sound_07len_sweep_period_sync() {
+    let rom_data = common::get_rom_data("tests/roms/dmg_sound/07-len_sweep_period_sync.gb").unwrap();
+    let mut gb = gb::Gameboy::power_on(rom_data, None);
+    assert!(common::run_dmg_sound_case(&mut gb));
+}
 
 #[test]
 fn blargg_dmg_sound_08len_ctr_during_power() {
