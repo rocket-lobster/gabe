@@ -3,6 +3,7 @@ name = "gabe_core"
 version = "0.1.0"
 authors = ["Joe Thill <rocketlobster42@gmail.com>"]
 edition = "2021"
+license = "MIT OR Apache-2.0"
 
 [profile.dev]
 opt-level = 1
