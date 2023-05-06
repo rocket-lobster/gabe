@@ -209,7 +209,7 @@ impl AudioDriver {
         })
     }
 
-    /// Returns a TimeSource that can retrive the current ns timestamp derived from the 
+    /// Returns a TimeSource that can retrive the current ns timestamp derived from the
     /// sample rate and samples read by the audio device.
     /// If the stream is paused, the buffer state is cleared, so any previous time source values will be invalid.
     pub fn time_source(&self) -> Box<dyn TimeSource> {

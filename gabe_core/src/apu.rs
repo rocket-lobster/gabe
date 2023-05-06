@@ -126,7 +126,7 @@ impl SquareChannel1 {
         if self.sweep_enabled {
             self.sweep_timer = self.sweep_timer.saturating_sub(1);
             if self.sweep_timer == 0 {
-               self.channel_enabled = self.check_sweep(false);
+                self.channel_enabled = self.check_sweep(false);
             }
         }
     }
@@ -286,14 +286,15 @@ impl Memory for SquareChannel1 {
                         // Treat period of 0 as 8
                         self.sweep_timer = 8;
                     }
-                    self.sweep_enabled = self.sweep_timer != 8 || extract_bits(self.nr10_sweep_control, 2, 0) != 0x0;
+                    self.sweep_enabled =
+                        self.sweep_timer != 8 || extract_bits(self.nr10_sweep_control, 2, 0) != 0x0;
 
                     self.sweep_occurred = false;
-                        
+
                     // Update sweep state
                     self.sweep_shadow = ((self.nr14_freq_high_control as i32 & 0b111) << 8)
                         | self.nr13_frequency_low as i32;
-                    
+
                     if extract_bits(self.nr10_sweep_control, 2, 0) != 0x0 {
                         self.channel_enabled = self.check_sweep(true);
                     }

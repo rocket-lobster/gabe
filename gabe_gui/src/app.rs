@@ -1,17 +1,14 @@
 use std::{
     collections::VecDeque,
     fs::{File, OpenOptions},
-    io::{Read, Seek, Write}
+    io::{Read, Seek, Write},
 };
 
-use egui::{vec2, ColorImage, TextureHandle, TextureOptions, Key};
-use gabe_core::sink::{AudioFrame, Sink};
+use egui::{vec2, ColorImage, Key, TextureHandle, TextureOptions};
 use gabe_core::gb::{Gameboy, GbKeys};
+use gabe_core::sink::{AudioFrame, Sink};
 
-use crate::{
-    audio_driver::AudioDriver,
-    video_sinks,
-};
+use crate::{audio_driver::AudioDriver, video_sinks};
 
 const CYCLE_TIME_NS: f32 = 238.41858;
 
@@ -47,7 +44,7 @@ impl GabeApp {
             audio_driver: AudioDriver::new(gabe_core::SAMPLE_RATE, 100),
             framebuffer: cc.egui_ctx.load_texture(
                 "framebuffer",
-                ColorImage::example(),
+                ColorImage::default(),
                 Default::default(),
             ),
         }
@@ -92,27 +89,32 @@ impl eframe::App for GabeApp {
                     }
                 });
                 ui.menu_button("Emulation", |ui| {
-                    if ui.button("Stop").clicked() {
-                        if let Some(emu) = &mut self.emu {
-                            // Stop all emulation, reset state
-                            self.audio_driver.stop();
-                            // Save the data to the save file, if valid 
-                            if let (Some(data), Some(save_file)) = (emu.get_save_data(), &mut self.save_file) {
-                                if let Err(e) = save_file.rewind() {
-                                    println! {"{}: No save file written.", e};
+                    ui.add_enabled_ui(self.emu.is_some(), |ui| {
+                        if ui.button("Stop").clicked() {
+                            if let Some(emu) = &mut self.emu {
+                                // Stop all emulation, reset state
+                                self.audio_driver.stop();
+                                // Save the data to the save file, if valid
+                                if let (Some(data), Some(save_file)) =
+                                    (emu.get_save_data(), &mut self.save_file)
+                                {
+                                    if let Err(e) = save_file.rewind() {
+                                        println! {"{}: No save file written.", e};
+                                    }
+                                    if let Err(e) = save_file.write_all(&data) {
+                                        println! {"{}: Corrupt save file written.", e};
+                                    }
                                 }
-                                if let Err(e) = save_file.write_all(&data) {
-                                    println! {"{}: Corrupt save file written.", e};
-                                }
-                            }                       
-                            // Setting to None drops the Gameboy object
-                            self.emu = None;
-                            self.emulated_cycles = 0;
-                            // Clear framebuffer
-                            self.framebuffer.set(ColorImage::example(), Default::default());
+                                // Setting to None drops the Gameboy object
+                                self.emu = None;
+                                self.emulated_cycles = 0;
+                                // Clear framebuffer
+                                self.framebuffer
+                                    .set(ColorImage::default(), Default::default());
+                            }
+                            ui.close_menu();
                         }
-                    ui.close_menu();
-                    }
+                    })
                 });
             });
         });

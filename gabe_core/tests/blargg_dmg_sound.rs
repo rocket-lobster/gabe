@@ -45,7 +45,8 @@ fn blargg_dmg_sound_06overflow_trigger() {
 
 #[test]
 fn blargg_dmg_sound_07len_sweep_period_sync() {
-    let rom_data = common::get_rom_data("tests/roms/dmg_sound/07-len_sweep_period_sync.gb").unwrap();
+    let rom_data =
+        common::get_rom_data("tests/roms/dmg_sound/07-len_sweep_period_sync.gb").unwrap();
     let mut gb = gb::Gameboy::power_on(rom_data, None);
     assert!(common::run_dmg_sound_case(&mut gb));
 }

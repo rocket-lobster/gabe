@@ -12,7 +12,7 @@ fn main() {
         vsync: false,
         ..Default::default()
     };
-    
+
     eframe::run_native(
         "Gabe Emulator",
         native_options,
