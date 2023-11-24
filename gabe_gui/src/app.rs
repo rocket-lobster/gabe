@@ -4,7 +4,7 @@ use std::{
     io::{Read, Seek, Write},
 };
 
-use egui::{vec2, ColorImage, Key, TextureHandle, TextureOptions};
+use egui::{load::SizedTexture, ColorImage, Key, TextureHandle, TextureOptions};
 use gabe_core::gb::{Gameboy, GbKeys};
 use gabe_core::sink::{AudioFrame, Sink};
 
@@ -84,9 +84,6 @@ impl eframe::App for GabeApp {
                         }
                         ui.close_menu();
                     }
-                    if ui.button("Quit").clicked() {
-                        _frame.close();
-                    }
                 });
                 ui.menu_button("Emulation", |ui| {
                     ui.add_enabled_ui(self.emu.is_some(), |ui| {
@@ -147,7 +144,7 @@ impl eframe::App for GabeApp {
                     update_key_states(ctx, emu);
                 }
                 audio_buffer_sink.append(audio_sink.inner.as_slices().0);
-                ui.image(&mut self.framebuffer, vec2(160.0 * 4.0, 144.0 * 4.0));
+                ui.image(SizedTexture::from_handle(&self.framebuffer));
                 ctx.request_repaint();
             } else {
                 ui.heading("Use File->Open File to select and run a valid ROM file.");
@@ -157,13 +154,14 @@ impl eframe::App for GabeApp {
 }
 
 fn update_key_states(ctx: &egui::Context, gb: &mut Gameboy) {
-    let input = ctx.input();
-    gb.update_key_state(GbKeys::A, input.key_down(Key::X));
-    gb.update_key_state(GbKeys::B, input.key_down(Key::Z));
-    gb.update_key_state(GbKeys::Start, input.key_down(Key::Enter));
-    gb.update_key_state(GbKeys::Select, input.key_down(Key::Backspace));
-    gb.update_key_state(GbKeys::Up, input.key_down(Key::ArrowUp));
-    gb.update_key_state(GbKeys::Down, input.key_down(Key::ArrowDown));
-    gb.update_key_state(GbKeys::Left, input.key_down(Key::ArrowLeft));
-    gb.update_key_state(GbKeys::Right, input.key_down(Key::ArrowRight));
+    ctx.input(|i| {
+        gb.update_key_state(GbKeys::A, i.key_down(Key::X));
+        gb.update_key_state(GbKeys::B, i.key_down(Key::Z));
+        gb.update_key_state(GbKeys::Start, i.key_down(Key::Enter));
+        gb.update_key_state(GbKeys::Select, i.key_down(Key::Backspace));
+        gb.update_key_state(GbKeys::Up, i.key_down(Key::ArrowUp));
+        gb.update_key_state(GbKeys::Down, i.key_down(Key::ArrowDown));
+        gb.update_key_state(GbKeys::Left, i.key_down(Key::ArrowLeft));
+        gb.update_key_state(GbKeys::Right, i.key_down(Key::ArrowRight));
+    });
 }

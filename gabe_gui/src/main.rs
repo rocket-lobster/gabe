@@ -17,5 +17,6 @@ fn main() {
         "Gabe Emulator",
         native_options,
         Box::new(|cc| Box::new(gabe_gui::GabeApp::new(cc))),
-    );
+    )
+    .unwrap();
 }

@@ -146,11 +146,12 @@ impl AudioDriver {
                     let mut buffer = read_audio_buffer.lock().unwrap();
                     for frame in data.chunks_mut(2) {
                         for sample in frame.iter_mut() {
-                            *sample = Sample::from(&resampler.next(&mut *buffer));
+                            *sample = resampler.next(&mut *buffer).to_sample();
                         }
                     }
                 },
                 err_fn,
+                None,
             ),
             SampleFormat::I16 => device.build_output_stream(
                 &config,
@@ -158,11 +159,12 @@ impl AudioDriver {
                     let mut buffer = read_audio_buffer.lock().unwrap();
                     for frame in data.chunks_mut(2) {
                         for sample in frame.iter_mut() {
-                            *sample = Sample::from(&resampler.next(&mut *buffer));
+                            *sample = resampler.next(&mut *buffer).to_sample();
                         }
                     }
                 },
                 err_fn,
+                None,
             ),
             SampleFormat::U16 => device.build_output_stream(
                 &config,
@@ -170,12 +172,14 @@ impl AudioDriver {
                     let mut buffer = read_audio_buffer.lock().unwrap();
                     for frame in data.chunks_mut(2) {
                         for sample in frame.iter_mut() {
-                            *sample = Sample::from(&resampler.next(&mut *buffer));
+                            *sample = resampler.next(&mut *buffer).to_sample();
                         }
                     }
                 },
                 err_fn,
+                None,
             ),
+            _ => panic!("Test"),
         }
         .unwrap();
 

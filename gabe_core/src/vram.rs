@@ -519,9 +519,9 @@ impl Vram {
             };
             let pixel_rgb = Self::shade_to_rgb_u8(&pixel_shade);
 
-            self.screen_data[((self.ly as usize * (SCREEN_WIDTH * 3)) + (p * 3))] = pixel_rgb.0;
-            self.screen_data[((self.ly as usize * (SCREEN_WIDTH * 3)) + (p * 3) + 1)] = pixel_rgb.1;
-            self.screen_data[((self.ly as usize * (SCREEN_WIDTH * 3)) + (p * 3) + 2)] = pixel_rgb.2;
+            self.screen_data[(self.ly as usize * (SCREEN_WIDTH * 3)) + (p * 3)] = pixel_rgb.0;
+            self.screen_data[(self.ly as usize * (SCREEN_WIDTH * 3)) + (p * 3) + 1] = pixel_rgb.1;
+            self.screen_data[(self.ly as usize * (SCREEN_WIDTH * 3)) + (p * 3) + 2] = pixel_rgb.2;
         }
     }
 

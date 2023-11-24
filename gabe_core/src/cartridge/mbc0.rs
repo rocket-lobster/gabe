@@ -25,7 +25,7 @@ impl Mbc0 {
 impl Memory for Mbc0 {
     fn read_byte(&self, addr: u16) -> u8 {
         match addr {
-            0x0000..=0x7FFF => self.rom[(addr as usize - CART_ROM_START)],
+            0x0000..=0x7FFF => self.rom[addr as usize - CART_ROM_START],
             _ => {
                 error!("Unassigned read to MBC0 location {:04X}", addr);
                 0xFF
