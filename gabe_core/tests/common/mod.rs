@@ -75,7 +75,7 @@ pub fn run_dmg_sound_case(gb: &mut gabe_core::gb::Gameboy) -> bool {
                 return data[0] == 0;
             } else {
                 let str_data = gb.get_memory_range(output_ptr..output_ptr + 5);
-                for c in str_data.into_iter() {
+                for c in str_data.iter() {
                     if *c == 0 {
                         break;
                     } else {

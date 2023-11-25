@@ -100,11 +100,7 @@ impl Memory for Mbc1 {
     fn write_byte(&mut self, addr: u16, val: u8) {
         match addr {
             0x0000..=0x1FFF => {
-                if ((val & 0xF) == 0x0A) && self.ram_bank_count != 0 {
-                    self.ram_enabled = true;
-                } else {
-                    self.ram_enabled = false;
-                }
+                self.ram_enabled = ((val & 0xF) == 0x0A) && self.ram_bank_count != 0;
             }
             0x2000..=0x3FFF => {
                 if (val & 0x1F) == 0x0 {

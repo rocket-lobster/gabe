@@ -2005,13 +2005,13 @@ mod cpu_tests {
         let mut cpu = Cpu::power_on();
         let mut v = cpu.rl(0b0110_0101);
         assert_eq!(v, 0b1100_1011);
-        assert_eq!(cpu.reg.get_flag(Flag::C), false);
+        assert!(!cpu.reg.get_flag(Flag::C));
         v = cpu.rl(0b1100_1011);
         assert_eq!(v, 0b1001_0110);
-        assert_eq!(cpu.reg.get_flag(Flag::C), true);
+        assert!(cpu.reg.get_flag(Flag::C));
         v = cpu.rl(0b1001_0110);
         assert_eq!(v, 0b0010_1101);
-        assert_eq!(cpu.reg.get_flag(Flag::C), true);
+        assert!(cpu.reg.get_flag(Flag::C));
     }
 
     #[test]
@@ -2019,13 +2019,13 @@ mod cpu_tests {
         let mut cpu = Cpu::power_on();
         let mut v = cpu.rr(0b0110_0101);
         assert_eq!(v, 0b1011_0010);
-        assert_eq!(cpu.reg.get_flag(Flag::C), true);
+        assert!(cpu.reg.get_flag(Flag::C));
         v = cpu.rr(0b1011_0010);
         assert_eq!(v, 0b1101_1001);
-        assert_eq!(cpu.reg.get_flag(Flag::C), false);
+        assert!(!cpu.reg.get_flag(Flag::C));
         v = cpu.rr(0b1101_1001);
         assert_eq!(v, 0b0110_1100);
-        assert_eq!(cpu.reg.get_flag(Flag::C), true);
+        assert!(cpu.reg.get_flag(Flag::C));
     }
 
     #[test]

@@ -779,14 +779,14 @@ mod vram_tests {
     fn lcdc_read_write() {
         let mut lcdc: Lcdc = Lcdc::power_on();
         lcdc.write_byte(0xFF40, 0b1001_1010);
-        assert_eq!(true, lcdc.lcd_enable);
-        assert_eq!(false, lcdc.window_tile_map_select);
-        assert_eq!(false, lcdc.window_enable);
-        assert_eq!(true, lcdc.tile_data_select);
-        assert_eq!(true, lcdc.background_tile_map_select);
-        assert_eq!(false, lcdc.obj_size_select);
-        assert_eq!(true, lcdc.obj_enable);
-        assert_eq!(false, lcdc.background_enable);
+        assert!(lcdc.lcd_enable);
+        assert!(!lcdc.window_tile_map_select);
+        assert!(!lcdc.window_enable);
+        assert!(lcdc.tile_data_select);
+        assert!(lcdc.background_tile_map_select);
+        assert!(!lcdc.obj_size_select);
+        assert!(lcdc.obj_enable);
+        assert!(!lcdc.background_enable);
         lcdc = Lcdc {
             lcd_enable: false,
             window_tile_map_select: true,
@@ -805,11 +805,11 @@ mod vram_tests {
     fn stat_read_write() {
         let mut stat = Stat::power_on();
         stat.write_byte(0xFF41, 0b0110_0101);
-        assert_eq!(true, stat.lyc_ly_interrupt);
-        assert_eq!(true, stat.oam_interrupt);
-        assert_eq!(false, stat.vblank_interrupt);
-        assert_eq!(false, stat.hblank_interrupt);
-        assert_eq!(true, stat.lyc_ly_flag);
+        assert!(stat.lyc_ly_interrupt);
+        assert!(stat.oam_interrupt);
+        assert!(!stat.vblank_interrupt);
+        assert!(!stat.hblank_interrupt);
+        assert!(stat.lyc_ly_flag);
         assert_eq!(LCDMode::Mode1, stat.mode_flag);
         stat = Stat {
             lyc_ly_interrupt: false,
