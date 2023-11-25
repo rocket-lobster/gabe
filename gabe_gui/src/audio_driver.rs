@@ -113,19 +113,21 @@ impl AudioDriver {
         // Prioritizes 2 channels, gets highest sample rate.
         let best_config = supported_configs_range
             .max_by(|x, y| x.cmp_default_heuristics(y))
-            .expect("No supported output configs for device.")
-            .with_sample_rate(cpal::SampleRate(48000));
+            .expect("No supported output configs for device.");
+
+        let max_sample = best_config.max_sample_rate();
+        let selected_config = best_config.with_sample_rate(max_sample);
 
         let err_fn = |err| error!("An error occurred on the output audio stream: {}", err);
-        let sample_format = best_config.sample_format();
+        let sample_format = selected_config.sample_format();
         let buffer_samples = (sample_rate * latency_ms / 1000 * 2) as usize;
         info!("Sound: ");
         info!("\t Device: {:?}", device.name().unwrap());
         info!("\t Device sample format: {:?}", sample_format);
-        info!("\t Device sample rate: {:?}", best_config.sample_rate().0);
-        info!("\t Device channels: {:?}", best_config.channels());
+        info!("\t Device sample rate: {:?}", selected_config.sample_rate().0);
+        info!("\t Device channels: {:?}", selected_config.channels());
 
-        let config = best_config.config();
+        let config = selected_config.config();
         let audio_buffer = Arc::new(Mutex::new(SampleBuffer {
             inner: vec![0.0; buffer_samples].into_boxed_slice(),
             samples_read: 0,
