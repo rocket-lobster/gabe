@@ -1,4 +1,3 @@
-use super::mmu;
 use super::mmu::InterruptKind;
 use super::mmu::Memory;
 use alloc::fmt::*;
@@ -243,7 +242,7 @@ impl Cpu {
         self.clone()
     }
 
-    fn check_interrupts(&mut self, mmu: &mut mmu::Mmu) -> Option<u32> {
+    fn check_interrupts(&mut self, mmu: &mut dyn Memory) -> Option<u32> {
         // Check if any enabled interrupts were requested
         let mut interrupt_reqs = mmu.read_byte(0xFF0F);
         let interrupt_enables = mmu.read_byte(0xFFFF);
@@ -316,7 +315,7 @@ impl Cpu {
     /// Fetches a single instruction opcode, decodes the opcode to the
     /// appropriate function, and executes the functionality.
     /// Returns the number of cycles executed.
-    pub fn tick(&mut self, mmu: &mut mmu::Mmu) -> u32 {
+    pub fn tick(&mut self, mmu: &mut dyn Memory) -> u32 {
         if self.stopped {
             // Reset DIV
             mmu.write_byte(0xFF04, 0x0);
@@ -1519,7 +1518,7 @@ impl Cpu {
 
     /// Reads and returns the value at the current PC location
     /// Increments the PC after reading
-    fn imm(&mut self, mmu: &mut mmu::Mmu) -> u8 {
+    fn imm(&mut self, mmu: &mut dyn Memory) -> u8 {
         let v = mmu.read_byte(self.reg.pc);
         self.reg.pc += 1;
         v
@@ -1528,18 +1527,18 @@ impl Cpu {
     /// Reads and returns the word at the current PC location
     /// Value is little endian representation
     /// Increments PC to after the word
-    fn imm_word(&mut self, mmu: &mut mmu::Mmu) -> u16 {
+    fn imm_word(&mut self, mmu: &mut dyn Memory) -> u16 {
         let lo = self.imm(mmu);
         let hi = self.imm(mmu);
         (u16::from(hi) << 8) | u16::from(lo)
     }
 
-    fn stack_push(&mut self, mmu: &mut mmu::Mmu, v: u16) {
+    fn stack_push(&mut self, mmu: &mut dyn Memory, v: u16) {
         self.reg.sp -= 2;
         mmu.write_word(self.reg.sp, v);
     }
 
-    fn stack_pop(&mut self, mmu: &mut mmu::Mmu) -> u16 {
+    fn stack_pop(&mut self, mmu: &mut dyn Memory) -> u16 {
         let v = mmu.read_word(self.reg.sp);
         self.reg.sp += 2;
         v
@@ -1596,7 +1595,7 @@ impl Cpu {
     /// - N: Set to 0
     /// - H: Set to 1 if bit 3 carries, 0 otherwise
     /// - C: Set to 1 if bit 7 carries, 0 otherwise
-    fn add_sp(&mut self, mmu: &mut mmu::Mmu) {
+    fn add_sp(&mut self, mmu: &mut dyn Memory) {
         let v = (i16::from(self.imm(mmu) as i8)) as u16;
         self.reg.set_flag(Flag::Z, false);
         self.reg.set_flag(Flag::N, false);
@@ -1957,6 +1956,9 @@ impl Cpu {
 
 #[cfg(test)]
 mod cpu_tests {
+
+    use std::io::{BufReader, Read};
+
     use super::*;
     #[test]
     fn register_read() {
@@ -1998,6 +2000,85 @@ mod cpu_tests {
         assert_eq!(reg.e, 0x01);
         assert_eq!(reg.h, 0x23);
         assert_eq!(reg.l, 0x45);
+    }
+
+    #[test]
+    fn json_instructions() {
+        extern crate serde_json;
+        use std::fs;
+        use std::path::PathBuf;
+
+        struct TestRam {
+            ram: Box<[u8]>,
+        }
+
+        impl Memory for TestRam {
+            fn read_byte(&self, addr: u16) -> u8 {
+                self.ram[addr as usize]
+            }
+
+            fn write_byte(&mut self, addr: u16, val: u8) {
+                self.ram[addr as usize] = val
+            }
+        }
+
+        let json_path: PathBuf = [env!("CARGO_MANIFEST_DIR"), "tests/resources/sm83_json"]
+            .iter()
+            .collect();
+        let json_dir = fs::read_dir(json_path).unwrap();
+        for path in json_dir {
+            let path = path.unwrap().path();
+            println!("{:?}", path);
+            let file = fs::File::open(path).unwrap();
+            let reader = BufReader::new(file);
+            let json_data: serde_json::Value = serde_json::from_reader(reader).unwrap();
+            for test in json_data.as_array().unwrap() {
+                println!("{}", test["name"]);
+
+                let initial_state = test["initial"].as_object().unwrap();
+                let mut cpu = Cpu::power_on();
+                cpu.reg.pc = initial_state["pc"].as_u64().unwrap() as u16;
+                cpu.reg.sp = initial_state["sp"].as_u64().unwrap() as u16;
+                cpu.reg.a = initial_state["a"].as_u64().unwrap() as u8;
+                cpu.reg.b = initial_state["b"].as_u64().unwrap() as u8;
+                cpu.reg.c = initial_state["c"].as_u64().unwrap() as u8;
+                cpu.reg.d = initial_state["d"].as_u64().unwrap() as u8;
+                cpu.reg.e = initial_state["e"].as_u64().unwrap() as u8;
+                cpu.reg.f = initial_state["f"].as_u64().unwrap() as u8;
+                cpu.reg.h = initial_state["h"].as_u64().unwrap() as u8;
+                cpu.reg.l = initial_state["l"].as_u64().unwrap() as u8;
+                let mut ram = TestRam {
+                    ram: vec![0x0; 0x10000].into_boxed_slice(),
+                };
+                let initial_ram = initial_state["ram"].as_array().unwrap();
+                for ram_writes in initial_ram {
+                    let ram_writes = ram_writes.as_array().unwrap();
+                    let addr = ram_writes[0].as_u64().unwrap() as u16;
+                    let data = ram_writes[1].as_u64().unwrap() as u8;
+                    ram.write_byte(addr, data);
+                }
+                cpu.tick(&mut ram);
+
+                let final_state = test["final"].as_object().unwrap();
+                assert_eq!(cpu.reg.pc, final_state["pc"].as_u64().unwrap() as u16);
+                assert_eq!(cpu.reg.sp, final_state["sp"].as_u64().unwrap() as u16);
+                assert_eq!(cpu.reg.a, final_state["a"].as_u64().unwrap() as u8);
+                assert_eq!(cpu.reg.b, final_state["b"].as_u64().unwrap() as u8);
+                assert_eq!(cpu.reg.c, final_state["c"].as_u64().unwrap() as u8);
+                assert_eq!(cpu.reg.d, final_state["d"].as_u64().unwrap() as u8);
+                assert_eq!(cpu.reg.e, final_state["e"].as_u64().unwrap() as u8);
+                assert_eq!(cpu.reg.f, final_state["f"].as_u64().unwrap() as u8);
+                assert_eq!(cpu.reg.h, final_state["h"].as_u64().unwrap() as u8);
+                assert_eq!(cpu.reg.l, final_state["l"].as_u64().unwrap() as u8);
+                let final_ram = final_state["ram"].as_array().unwrap();
+                for ram_writes in final_ram {
+                    let ram_writes = ram_writes.as_array().unwrap();
+                    let addr = ram_writes[0].as_u64().unwrap() as u16;
+                    let data = ram_writes[1].as_u64().unwrap() as u8;
+                    assert_eq!(ram.read_byte(addr), data);
+                }
+            }
+        }
     }
 
     #[test]

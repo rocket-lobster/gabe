@@ -13,3 +13,6 @@ debug = true
 
 [dependencies]
 log = "*"
+
+[dev-dependencies]
+serde_json = "*"

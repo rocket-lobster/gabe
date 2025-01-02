@@ -6,3 +6,4 @@ gabe-core/Cargo.lock
 *.sav
 *.s
 source
+*.DS_Store
