@@ -4,7 +4,7 @@ use std::{
     io::{Read, Seek, Write},
 };
 
-use egui::{load::SizedTexture, ColorImage, Key, TextureHandle, TextureOptions};
+use egui::{load::SizedTexture, ColorImage, Image, Key, TextureHandle, TextureOptions, Vec2};
 use gabe_core::gb::{Gameboy, GbKeys};
 use gabe_core::sink::{AudioFrame, Sink};
 
@@ -144,7 +144,10 @@ impl eframe::App for GabeApp {
                     update_key_states(ctx, emu);
                 }
                 audio_buffer_sink.append(audio_sink.inner.as_slices().0);
-                ui.image(SizedTexture::from_handle(&self.framebuffer));
+                ui.add(
+                    Image::new(SizedTexture::from_handle(&self.framebuffer))
+                        .fit_to_fraction(Vec2::new(1.0, 1.0)),
+                );
                 ctx.request_repaint();
             } else {
                 ui.heading("Use File->Open File to select and run a valid ROM file.");

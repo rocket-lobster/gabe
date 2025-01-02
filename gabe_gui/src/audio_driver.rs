@@ -124,7 +124,10 @@ impl AudioDriver {
         info!("Sound: ");
         info!("\t Device: {:?}", device.name().unwrap());
         info!("\t Device sample format: {:?}", sample_format);
-        info!("\t Device sample rate: {:?}", selected_config.sample_rate().0);
+        info!(
+            "\t Device sample rate: {:?}",
+            selected_config.sample_rate().0
+        );
         info!("\t Device channels: {:?}", selected_config.channels());
 
         let config = selected_config.config();
