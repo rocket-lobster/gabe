@@ -1520,7 +1520,7 @@ impl Cpu {
     /// Increments the PC after reading
     fn imm(&mut self, mmu: &mut dyn Memory) -> u8 {
         let v = mmu.read_byte(self.reg.pc);
-        self.reg.pc += 1;
+        self.reg.pc = self.reg.pc.wrapping_add(1);
         v
     }
 
@@ -2004,14 +2004,15 @@ mod cpu_tests {
 
     #[test]
     fn json_instructions() {
+        // Pull in test-exclusive crates/std
         extern crate serde_json;
         use std::fs;
         use std::path::PathBuf;
 
+        // Define simple 64k RAM that impls Memory for tests
         struct TestRam {
             ram: Box<[u8]>,
         }
-
         impl Memory for TestRam {
             fn read_byte(&self, addr: u16) -> u8 {
                 self.ram[addr as usize]
@@ -2022,21 +2023,32 @@ mod cpu_tests {
             }
         }
 
+        // Get path from top-level test folder
         let json_path: PathBuf = [env!("CARGO_MANIFEST_DIR"), "tests/resources/sm83_json"]
             .iter()
             .collect();
         let json_dir = fs::read_dir(json_path).unwrap();
+
+        // Test all .json files in test directory
         for path in json_dir {
             let path = path.unwrap().path();
             println!("{:?}", path);
             let file = fs::File::open(path).unwrap();
             let reader = BufReader::new(file);
             let json_data: serde_json::Value = serde_json::from_reader(reader).unwrap();
+
+            // For given JSON file, test all instruction tests
             for test in json_data.as_array().unwrap() {
                 println!("{}", test["name"]);
 
-                let initial_state = test["initial"].as_object().unwrap();
+                // Initialize CPU and RAM structures
                 let mut cpu = Cpu::power_on();
+                let mut ram = TestRam {
+                    ram: vec![0x0; 0x10000].into_boxed_slice(),
+                };
+
+                // Populate initial state before test
+                let initial_state = test["initial"].as_object().unwrap();
                 cpu.reg.pc = initial_state["pc"].as_u64().unwrap() as u16;
                 cpu.reg.sp = initial_state["sp"].as_u64().unwrap() as u16;
                 cpu.reg.a = initial_state["a"].as_u64().unwrap() as u8;
@@ -2047,9 +2059,6 @@ mod cpu_tests {
                 cpu.reg.f = initial_state["f"].as_u64().unwrap() as u8;
                 cpu.reg.h = initial_state["h"].as_u64().unwrap() as u8;
                 cpu.reg.l = initial_state["l"].as_u64().unwrap() as u8;
-                let mut ram = TestRam {
-                    ram: vec![0x0; 0x10000].into_boxed_slice(),
-                };
                 let initial_ram = initial_state["ram"].as_array().unwrap();
                 for ram_writes in initial_ram {
                     let ram_writes = ram_writes.as_array().unwrap();
@@ -2057,8 +2066,11 @@ mod cpu_tests {
                     let data = ram_writes[1].as_u64().unwrap() as u8;
                     ram.write_byte(addr, data);
                 }
+
+                // Perform single CPU tick, performing full instruction
                 cpu.tick(&mut ram);
 
+                // Compare CPU and RAM state to expected state
                 let final_state = test["final"].as_object().unwrap();
                 assert_eq!(cpu.reg.pc, final_state["pc"].as_u64().unwrap() as u16);
                 assert_eq!(cpu.reg.sp, final_state["sp"].as_u64().unwrap() as u16);
